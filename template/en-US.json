@@ -1,50 +1,631 @@
 {
   "languageTag": "en-US",
-  "fileDescription": "Strings for sample_addon.",
+  "fileDescription": "Strings for salmanshh_line_renderer2d.",
   "text": {
     "plugins": {
-      "sample_addon": {
-        "name": "Sample Addon",
-        "description": "Description",
+      "salmanshh_line_renderer2d": {
+        "name": "Line Renderer 2D",
+        "description": "Procedural mesh-distorted line renderer for ropes, beams, trails, and other dynamic strokes.",
         "help-url": "https://www.construct.net",
         "aceCategories": {
-          "Ace_Folders_In_Category_Folder": "Ace_Folders_In_Category_Folder",
-          "Aces_Files_In_Category_Folder": "Aces_Files_In_Category_Folder",
-          "Aces_In_Single_File": "Aces_In_Single_File"
+          "Appearance": "Appearance",
+          "Coordinate_Space": "Coordinate Space",
+          "Distortion": "Distortion",
+          "Object_Following": "Object Following",
+          "Path_Building": "Path Building",
+          "Performance": "Performance",
+          "Point_Control": "Point Control",
+          "Setup": "Setup",
+          "Aces_In_Single_File": "Aces_In_Single_File",
+          "Events": "Events",
+          "State_Checks": "State Checks",
+          "Values": "Values"
         },
-        "properties": {},
+        "properties": {
+          "initialPointCount": {
+            "name": "Initial point count",
+            "desc": "Number of control points allocated when the instance is created."
+          },
+          "strokeTexture": {
+            "name": "Stroke texture",
+            "desc": "Optional texture projected along the generated stroke mesh."
+          },
+          "textureTileLength": {
+            "name": "Texture tile length",
+            "desc": "World-space pixels per full texture repeat along the stroke."
+          },
+          "uvScrollSpeed": {
+            "name": "UV scroll speed",
+            "desc": "Pixels per second the texture scrolls from start to end."
+          },
+          "defaultWidth": {
+            "name": "Default width",
+            "desc": "Initial width assigned to control points."
+          },
+          "distortAmplitude": {
+            "name": "Distort amplitude",
+            "desc": "Maximum pixel offset applied by the distortion pass."
+          },
+          "distortFrequency": {
+            "name": "Distort frequency",
+            "desc": "Spatial frequency of the distortion wave."
+          },
+          "distortSpeed": {
+            "name": "Distort speed",
+            "desc": "Speed multiplier for distortion phase advance."
+          },
+          "distortAxis": {
+            "name": "Distort axis",
+            "desc": "Which axis receives the distortion offset.",
+            "items": {
+              "x_only": "X only",
+              "y_only": "Y only",
+              "both": "Both",
+              "perpendicular": "Perpendicular"
+            }
+          },
+          "endCapStyle": {
+            "name": "End cap style",
+            "desc": "Shape used at the start and end of the stroke.",
+            "items": {
+              "round": "Round",
+              "flat": "Flat",
+              "square": "Square"
+            }
+          },
+          "blendMode": {
+            "name": "Blend mode",
+            "desc": "Blend mode used when drawing the generated mesh.",
+            "items": {
+              "normal": "Normal",
+              "additive": "Additive",
+              "multiply": "Multiply",
+              "screen": "Screen"
+            }
+          },
+          "samplingMode": {
+            "name": "Sampling mode",
+            "desc": "Texture sampling mode used for the stroke texture.",
+            "items": {
+              "auto": "Auto",
+              "nearest": "Nearest",
+              "linear": "Linear"
+            }
+          },
+          "debugPoints": {
+            "name": "Debug points",
+            "desc": "Draw control-point markers in the editor and at runtime."
+          },
+          "editorPreview": {
+            "name": "Editor preview",
+            "desc": "Controls how the line preview renders in the layout editor.",
+            "items": {
+              "wireframe": "Wireframe",
+              "solid": "Solid",
+              "animated": "Animated"
+            }
+          }
+        },
         "actions": {
-          "ActionCombo": {
-            "list-name": "Sample Action Combo",
-            "display-text": "Sample Action Combo {0}",
-            "description": "This is a sample action",
+          "SetBlendMode": {
+            "list-name": "Set blend mode",
+            "display-text": "Set blend mode to {0}",
+            "description": "Set the stroke blend mode.",
             "params": {
-              "param1": {
-                "name": "Param1",
-                "desc": "This is a sample param",
+              "mode": {
+                "name": "Mode",
+                "desc": "Blend mode.",
                 "items": {
-                  "test": "test",
-                  "test2": "test2"
+                  "normal": "Normal",
+                  "additive": "Additive",
+                  "multiply": "Multiply",
+                  "screen": "Screen"
                 }
               }
             }
           },
-          "Action": {
-            "list-name": "Sample Action",
-            "display-text": "Sample Action {0}",
-            "description": "This is a sample action",
+          "SetEndCapStyle": {
+            "list-name": "Set end cap style",
+            "display-text": "Set end cap style to {0}",
+            "description": "Set the start and end cap style.",
             "params": {
-              "param1": {
-                "name": "Param1",
-                "desc": "This is a sample param"
+              "style": {
+                "name": "Style",
+                "desc": "Cap style.",
+                "items": {
+                  "round": "Round",
+                  "flat": "Flat",
+                  "square": "Square"
+                }
               }
             }
           },
-          "AsyncAction": {
-            "list-name": "Sample Action Async",
-            "display-text": "Sample Action Async",
-            "description": "This is a sample action",
+          "SetOpacity": {
+            "list-name": "Set opacity",
+            "display-text": "Set opacity to {0}",
+            "description": "Set master opacity of the stroke.",
+            "params": {
+              "opacity": {
+                "name": "Opacity",
+                "desc": "Opacity percent."
+              }
+            }
+          },
+          "SetTextureTileLength": {
+            "list-name": "Set texture tile length",
+            "display-text": "Set texture tile length to {0}",
+            "description": "Set the world-space pixels per texture repeat.",
+            "params": {
+              "length": {
+                "name": "Length",
+                "desc": "Tile length."
+              }
+            }
+          },
+          "SetUVScrollSpeed": {
+            "list-name": "Set UV scroll speed",
+            "display-text": "Set UV scroll speed to {0}",
+            "description": "Set texture scroll speed.",
+            "params": {
+              "speed": {
+                "name": "Speed",
+                "desc": "Scroll speed."
+              }
+            }
+          },
+          "SetCoordSpace": {
+            "list-name": "Set coordinate space",
+            "display-text": "Set coordinate space to {0}",
+            "description": "Choose absolute or relative point coordinates.",
+            "params": {
+              "space": {
+                "name": "Space",
+                "desc": "Coordinate space.",
+                "items": {
+                  "absolute": "Absolute",
+                  "relative": "Relative"
+                }
+              }
+            }
+          },
+          "SetDistortAmplitude": {
+            "list-name": "Set distort amplitude",
+            "display-text": "Set distort amplitude to {0}",
+            "description": "Set distortion amplitude.",
+            "params": {
+              "amplitude": {
+                "name": "Amplitude",
+                "desc": "Amplitude."
+              }
+            }
+          },
+          "SetDistortAxis": {
+            "list-name": "Set distort axis",
+            "display-text": "Set distort axis to {0}",
+            "description": "Set which axis distortion offsets apply to.",
+            "params": {
+              "axis": {
+                "name": "Axis",
+                "desc": "Distortion axis.",
+                "items": {
+                  "x_only": "X only",
+                  "y_only": "Y only",
+                  "both": "Both",
+                  "perpendicular": "Perpendicular"
+                }
+              }
+            }
+          },
+          "SetDistortFrequency": {
+            "list-name": "Set distort frequency",
+            "display-text": "Set distort frequency to {0}",
+            "description": "Set distortion frequency.",
+            "params": {
+              "frequency": {
+                "name": "Frequency",
+                "desc": "Frequency."
+              }
+            }
+          },
+          "SetDistortion": {
+            "list-name": "Set distortion",
+            "display-text": "Set distortion amplitude {0} frequency {1} speed {2}",
+            "description": "Set all distortion parameters.",
+            "params": {
+              "amplitude": {
+                "name": "Amplitude",
+                "desc": "Distortion amplitude."
+              },
+              "frequency": {
+                "name": "Frequency",
+                "desc": "Distortion frequency."
+              },
+              "speed": {
+                "name": "Speed",
+                "desc": "Distortion speed."
+              }
+            }
+          },
+          "SetDistortSpeed": {
+            "list-name": "Set distort speed",
+            "display-text": "Set distort speed to {0}",
+            "description": "Set distortion speed.",
+            "params": {
+              "speed": {
+                "name": "Speed",
+                "desc": "Speed."
+              }
+            }
+          },
+          "SetPointsFromObjects": {
+            "list-name": "Set points from objects",
+            "display-text": "Set points from objects {0}",
+            "description": "Rebuild the point list from picked instances.",
+            "params": {
+              "object": {
+                "name": "Object",
+                "desc": "Objects to read."
+              }
+            }
+          },
+          "SetPointToObject": {
+            "list-name": "Set point to object",
+            "display-text": "Set point {0} to object {1}",
+            "description": "Set a point position from the first picked instance.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Point index."
+              },
+              "object": {
+                "name": "Object",
+                "desc": "Object to read."
+              }
+            }
+          },
+          "BuildArc": {
+            "list-name": "Build arc",
+            "display-text": "Build arc at ({0}, {1}) radius {2} from {3} to {4} with {5} segments",
+            "description": "Build an arc into control points.",
+            "params": {
+              "cx": {
+                "name": "Center X",
+                "desc": "Center X."
+              },
+              "cy": {
+                "name": "Center Y",
+                "desc": "Center Y."
+              },
+              "radius": {
+                "name": "Radius",
+                "desc": "Arc radius."
+              },
+              "startAngle": {
+                "name": "Start angle",
+                "desc": "Start angle in degrees."
+              },
+              "endAngle": {
+                "name": "End angle",
+                "desc": "End angle in degrees."
+              },
+              "segments": {
+                "name": "Segments",
+                "desc": "Segment count."
+              }
+            }
+          },
+          "BuildBezier": {
+            "list-name": "Build bezier",
+            "display-text": "Build bezier from ({0}, {1}) via ({2}, {3}) and ({4}, {5}) to ({6}, {7}) with {8} segments",
+            "description": "Sample a cubic bezier into control points.",
+            "params": {
+              "x1": {
+                "name": "X1",
+                "desc": "Start X."
+              },
+              "y1": {
+                "name": "Y1",
+                "desc": "Start Y."
+              },
+              "c1x": {
+                "name": "C1 X",
+                "desc": "Control 1 X."
+              },
+              "c1y": {
+                "name": "C1 Y",
+                "desc": "Control 1 Y."
+              },
+              "c2x": {
+                "name": "C2 X",
+                "desc": "Control 2 X."
+              },
+              "c2y": {
+                "name": "C2 Y",
+                "desc": "Control 2 Y."
+              },
+              "x2": {
+                "name": "X2",
+                "desc": "End X."
+              },
+              "y2": {
+                "name": "Y2",
+                "desc": "End Y."
+              },
+              "segments": {
+                "name": "Segments",
+                "desc": "Segment count."
+              }
+            }
+          },
+          "ConnectObjects": {
+            "list-name": "Connect objects",
+            "display-text": "Connect {0} to {1}",
+            "description": "Build a two-point line between picked objects.",
+            "params": {
+              "from": {
+                "name": "From",
+                "desc": "Start object."
+              },
+              "to": {
+                "name": "To",
+                "desc": "End object."
+              }
+            }
+          },
+          "SetLine": {
+            "list-name": "Set line",
+            "display-text": "Set line from ({0}, {1}) to ({2}, {3})",
+            "description": "Replace the point list with a straight line.",
+            "params": {
+              "x1": {
+                "name": "X1",
+                "desc": "Start X."
+              },
+              "y1": {
+                "name": "Y1",
+                "desc": "Start Y."
+              },
+              "x2": {
+                "name": "X2",
+                "desc": "End X."
+              },
+              "y2": {
+                "name": "Y2",
+                "desc": "End Y."
+              }
+            }
+          },
+          "SmoothPath": {
+            "list-name": "Smooth path",
+            "display-text": "Smooth path with {0} subdivisions",
+            "description": "Replace the path with a Catmull-Rom spline.",
+            "params": {
+              "subdivisions": {
+                "name": "Subdivisions",
+                "desc": "Inserted points per segment."
+              }
+            }
+          },
+          "SetDistortResolution": {
+            "list-name": "Set distort resolution",
+            "display-text": "Set distort resolution to {0}",
+            "description": "Set the number of vertex pairs per segment.",
+            "params": {
+              "subdivisions": {
+                "name": "Subdivisions",
+                "desc": "Subdivision count."
+              }
+            }
+          },
+          "SetFrustumCulling": {
+            "list-name": "Set frustum culling",
+            "display-text": "Set frustum culling to {0}",
+            "description": "Enable or disable off-screen culling.",
+            "params": {
+              "enabled": {
+                "name": "Enabled",
+                "desc": "Whether culling is enabled."
+              }
+            }
+          },
+          "SetRenderLOD": {
+            "list-name": "Set render LOD",
+            "display-text": "Set render LOD to {0}",
+            "description": "Cap the point count used for the rendered mesh.",
+            "params": {
+              "maxPoints": {
+                "name": "Max points",
+                "desc": "LOD cap."
+              }
+            }
+          },
+          "SetAllColors": {
+            "list-name": "Set all colors",
+            "display-text": "Set all colors to ({0}, {1}, {2}) opacity {3}",
+            "description": "Set every point tint.",
+            "params": {
+              "r": {
+                "name": "Red",
+                "desc": "Red channel."
+              },
+              "g": {
+                "name": "Green",
+                "desc": "Green channel."
+              },
+              "b": {
+                "name": "Blue",
+                "desc": "Blue channel."
+              },
+              "opacity": {
+                "name": "Opacity",
+                "desc": "Opacity percent."
+              }
+            }
+          },
+          "SetAllWidths": {
+            "list-name": "Set all widths",
+            "display-text": "Set all widths to {0}",
+            "description": "Set every point width.",
+            "params": {
+              "width": {
+                "name": "Width",
+                "desc": "Width value."
+              }
+            }
+          },
+          "SetPoint": {
+            "list-name": "Set point",
+            "display-text": "Set point {0} to ({1}, {2}) width {3}",
+            "description": "Set the position and width of a point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Point index."
+              },
+              "x": {
+                "name": "X",
+                "desc": "Point X."
+              },
+              "y": {
+                "name": "Y",
+                "desc": "Point Y."
+              },
+              "width": {
+                "name": "Width",
+                "desc": "Point width."
+              }
+            }
+          },
+          "SetPointColor": {
+            "list-name": "Set point color",
+            "display-text": "Set point {0} color to ({1}, {2}, {3}) opacity {4}",
+            "description": "Set the tint of a point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Point index."
+              },
+              "r": {
+                "name": "Red",
+                "desc": "Red channel."
+              },
+              "g": {
+                "name": "Green",
+                "desc": "Green channel."
+              },
+              "b": {
+                "name": "Blue",
+                "desc": "Blue channel."
+              },
+              "opacity": {
+                "name": "Opacity",
+                "desc": "Opacity percent."
+              }
+            }
+          },
+          "SetPointWidth": {
+            "list-name": "Set point width",
+            "display-text": "Set point {0} width to {1}",
+            "description": "Set the width of a point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Point index."
+              },
+              "width": {
+                "name": "Width",
+                "desc": "Point width."
+              }
+            }
+          },
+          "SetPointXY": {
+            "list-name": "Set point position",
+            "display-text": "Set point {0} position to ({1}, {2})",
+            "description": "Set the position of a point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Point index."
+              },
+              "x": {
+                "name": "X",
+                "desc": "Point X."
+              },
+              "y": {
+                "name": "Y",
+                "desc": "Point Y."
+              }
+            }
+          },
+          "AddPoint": {
+            "list-name": "Add point",
+            "display-text": "Add point at ({0}, {1}) with width {2}",
+            "description": "Append one control point.",
+            "params": {
+              "x": {
+                "name": "X",
+                "desc": "Point X."
+              },
+              "y": {
+                "name": "Y",
+                "desc": "Point Y."
+              },
+              "width": {
+                "name": "Width",
+                "desc": "Point width."
+              }
+            }
+          },
+          "ClearPoints": {
+            "list-name": "Clear points",
+            "display-text": "Clear points",
+            "description": "Reset to two default control points.",
             "params": {}
+          },
+          "InsertPoint": {
+            "list-name": "Insert point",
+            "display-text": "Insert point at {0} to ({1}, {2}) with width {3}",
+            "description": "Insert a control point at an index.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Insert index."
+              },
+              "x": {
+                "name": "X",
+                "desc": "Point X."
+              },
+              "y": {
+                "name": "Y",
+                "desc": "Point Y."
+              },
+              "width": {
+                "name": "Width",
+                "desc": "Point width."
+              }
+            }
+          },
+          "RemovePoint": {
+            "list-name": "Remove point",
+            "display-text": "Remove point {0}",
+            "description": "Remove a control point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Point index."
+              }
+            }
+          },
+          "SetPointCount": {
+            "list-name": "Set point count",
+            "display-text": "set point count to {0}",
+            "description": "Resize the internal control-point list.",
+            "params": {
+              "count": {
+                "name": "Count",
+                "desc": "New point count."
+              }
+            }
           },
           "SampleAction": {
             "list-name": "Sample Action",
@@ -59,36 +640,74 @@
           }
         },
         "conditions": {
-          "ConditionCombo": {
-            "list-name": "Sample Condition",
-            "display-text": "Sample Condition {0}",
-            "description": "This is a sample condition",
+          "OnMeshRebuilt": {
+            "list-name": "On mesh rebuilt",
+            "display-text": "On mesh rebuilt",
+            "description": "Triggered when the mesh is rebuilt this tick.",
+            "params": {}
+          },
+          "OnPointCountChanged": {
+            "list-name": "On point count changed",
+            "display-text": "On point count changed",
+            "description": "Triggered when the point count changes.",
+            "params": {}
+          },
+          "HasMinimumPoints": {
+            "list-name": "Has minimum points",
+            "display-text": "Has at least {0} points",
+            "description": "True if the line has enough points.",
             "params": {
-              "param1": {
-                "name": "Param1",
-                "desc": "This is a sample param",
-                "items": {
-                  "TRUE": "True",
-                  "FALSE": "False"
-                }
+              "minCount": {
+                "name": "Minimum",
+                "desc": "Minimum required points."
               }
             }
           },
-          "Condition": {
-            "list-name": "Sample Condition",
-            "display-text": "Sample Condition {0}",
-            "description": "This is a sample condition",
+          "IsCulled": {
+            "list-name": "Is culled",
+            "display-text": "Is culled",
+            "description": "True if culling skipped the line on the last tick.",
+            "params": {}
+          },
+          "IsDistortionActive": {
+            "list-name": "Is distortion active",
+            "display-text": "Distortion is active",
+            "description": "True if distortion amplitude is greater than zero.",
+            "params": {}
+          },
+          "IsLODActive": {
+            "list-name": "Is LOD active",
+            "display-text": "LOD is active",
+            "description": "True if the render LOD cap is reducing the rendered point count.",
+            "params": {}
+          },
+          "IsPointIndexValid": {
+            "list-name": "Is point index valid",
+            "display-text": "Point index {0} is valid",
+            "description": "True if the index points to an existing control point.",
             "params": {
-              "param1": {
-                "name": "Param1",
-                "desc": "This is a sample param"
+              "index": {
+                "name": "Index",
+                "desc": "Point index."
               }
             }
           },
-          "Trigger": {
-            "list-name": "Sample Trigger",
-            "display-text": "Sample Trigger",
-            "description": "This is a sample trigger",
+          "IsRelativeSpace": {
+            "list-name": "Is relative space",
+            "display-text": "Coordinate space is relative",
+            "description": "True if points are interpreted relative to the instance transform.",
+            "params": {}
+          },
+          "IsTextureAssigned": {
+            "list-name": "Is texture assigned",
+            "display-text": "Texture is assigned",
+            "description": "True if a stroke texture is available.",
+            "params": {}
+          },
+          "IsUVScrolling": {
+            "list-name": "Is UV scrolling",
+            "display-text": "UV is scrolling",
+            "description": "True if UV scroll speed is non-zero.",
             "params": {}
           },
           "SampleCondition": {
@@ -99,14 +718,139 @@
           }
         },
         "expressions": {
-          "Expression2": {
-            "translated-name": "Expression2",
-            "description": "Sample Expression",
+          "CoordSpace": {
+            "translated-name": "CoordSpace",
+            "description": "Current coordinate space.",
             "params": {}
           },
-          "Expression": {
-            "translated-name": "Expression",
-            "description": "Sample Expression",
+          "DistortAmplitude": {
+            "translated-name": "DistortAmplitude",
+            "description": "Current distortion amplitude.",
+            "params": {}
+          },
+          "DistortFrequency": {
+            "translated-name": "DistortFrequency",
+            "description": "Current distortion frequency.",
+            "params": {}
+          },
+          "DistortResolution": {
+            "translated-name": "DistortResolution",
+            "description": "Current distortion subdivision count.",
+            "params": {}
+          },
+          "DistortSpeed": {
+            "translated-name": "DistortSpeed",
+            "description": "Current distortion speed.",
+            "params": {}
+          },
+          "GetPointB": {
+            "translated-name": "GetPointB",
+            "description": "Blue channel of a control point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Control point index."
+              }
+            }
+          },
+          "GetPointG": {
+            "translated-name": "GetPointG",
+            "description": "Green channel of a control point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Control point index."
+              }
+            }
+          },
+          "GetPointOpacity": {
+            "translated-name": "GetPointOpacity",
+            "description": "Opacity of a control point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Control point index."
+              }
+            }
+          },
+          "GetPointR": {
+            "translated-name": "GetPointR",
+            "description": "Red channel of a control point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Control point index."
+              }
+            }
+          },
+          "GetPointWidth": {
+            "translated-name": "GetPointWidth",
+            "description": "Width of a control point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Control point index."
+              }
+            }
+          },
+          "GetPointX": {
+            "translated-name": "GetPointX",
+            "description": "World X of a control point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Control point index."
+              }
+            }
+          },
+          "GetPointY": {
+            "translated-name": "GetPointY",
+            "description": "World Y of a control point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "Control point index."
+              }
+            }
+          },
+          "LineLength": {
+            "translated-name": "LineLength",
+            "description": "Length of the last built polyline.",
+            "params": {}
+          },
+          "PointCount": {
+            "translated-name": "PointCount",
+            "description": "Total number of control points.",
+            "params": {}
+          },
+          "RenderedPointCount": {
+            "translated-name": "RenderedPointCount",
+            "description": "Rendered point count used in the last mesh build.",
+            "params": {}
+          },
+          "RenderLOD": {
+            "translated-name": "RenderLOD",
+            "description": "Current render LOD cap.",
+            "params": {}
+          },
+          "TextureTileLength": {
+            "translated-name": "TextureTileLength",
+            "description": "Current texture tile length.",
+            "params": {}
+          },
+          "UVScrollOffset": {
+            "translated-name": "UVScrollOffset",
+            "description": "Accumulated UV scroll offset.",
+            "params": {}
+          },
+          "UVScrollSpeed": {
+            "translated-name": "UVScrollSpeed",
+            "description": "Current UV scroll speed.",
+            "params": {}
+          },
+          "VertexCount": {
+            "translated-name": "VertexCount",
+            "description": "Vertex count of the last built mesh.",
             "params": {}
           },
           "SampleExpression": {

@@ -7,14 +7,15 @@ import {
 import _version from "./version.js";
 export const addonType = ADDON_TYPE.PLUGIN;
 export const type = PLUGIN_TYPE.WORLD;
-export const id = "salmanshh_line_renderer";
-export const name = "Line Renderer";
+export const id = "salmanshh_line_renderer2D";
+export const name = "Line Renderer 2D";
 export const version = _version;
 export const minConstructVersion = undefined;
 export const author = "SalmanShh";
 export const website = "https://www.construct.net";
 export const documentation = "https://www.construct.net";
-export const description = "-";
+export const description =
+  "Procedural mesh-distorted line renderer for ropes, beams, trails, and other dynamic strokes.";
 export const category = ADDON_CATEGORY.GENERAL;
 
 export const hasDomside = false;
@@ -37,8 +38,19 @@ export const files = {
   cordovaResourceFiles: [],
 };
 
-// categories that are not filled will use the folder name
-export const aceCategories = {};
+export const aceCategories = {
+  Setup: "Setup",
+  Point_Control: "Point Control",
+  Path_Building: "Path Building",
+  Object_Following: "Object Following",
+  Coordinate_Space: "Coordinate Space",
+  Distortion: "Distortion",
+  Appearance: "Appearance",
+  Performance: "Performance",
+  Events: "Events",
+  State_Checks: "State Checks",
+  Values: "Values",
+};
 
 export const info = {
   // icon: "icon.svg",
@@ -54,8 +66,8 @@ export const info = {
     IsOnlyOneAllowed: false,
 
     // PLUGIN world only
-    IsResizable: false,
-    IsRotatable: false,
+    IsResizable: true,
+    IsRotatable: true,
     Is3D: false,
     HasImage: false,
     IsTiled: false,
@@ -65,59 +77,187 @@ export const info = {
     MustPreDraw: false,
 
     // PLUGIN object only
-    IsSingleGlobal: true,
+    IsSingleGlobal: false,
   },
   // PLUGIN only
   AddCommonACEs: {
-    Position: false,
-    SceneGraph: false,
-    Size: false,
-    Angle: false,
+    Position: true,
+    SceneGraph: true,
+    Size: true,
+    Angle: true,
     Appearance: false,
-    ZOrder: false,
+    ZOrder: true,
   },
 };
 
 export const properties = [
-  /*
   {
     type: PROPERTY_TYPE.INTEGER,
-    id: "property_id",
+    id: "initialPointCount",
+    options: {
+      initialValue: 2,
+      interpolatable: false,
+      minValue: 2,
+    },
+    name: "Initial point count",
+    desc: "Number of control points allocated when the instance is created.",
+  },
+  {
+    type: PROPERTY_TYPE.PROJECTFILE,
+    id: "strokeTexture",
+    options: {},
+    name: "Stroke texture",
+    desc: "Optional texture projected along the generated stroke mesh.",
+  },
+  {
+    type: PROPERTY_TYPE.FLOAT,
+    id: "textureTileLength",
+    options: {
+      initialValue: 64,
+      interpolatable: false,
+      minValue: 0.0001,
+    },
+    name: "Texture tile length",
+    desc: "World-space pixels per full texture repeat along the stroke.",
+  },
+  {
+    type: PROPERTY_TYPE.FLOAT,
+    id: "uvScrollSpeed",
     options: {
       initialValue: 0,
       interpolatable: false,
-
-      // minValue: 0, // omit to disable
-      // maxValue: 100, // omit to disable
-
-      // for type combo only
-      // items: [
-      //   {itemId1: "item name1" },
-      //   {itemId2: "item name2" },
-      // ],
-
-      // dragSpeedMultiplier: 1, // omit to disable
-
-      // for type object only
-      // allowedPluginIds: ["Sprite", "<world>"],
-
-      // for type link only
-      // linkCallback: function(instOrObj) {},
-      // linkText: "Link Text",
-      // callbackType:
-      //   "for-each-instance"
-      //   "once-for-type"
-
-      // for type info only
-      // infoCallback: function(inst) {},
-
-      // for type projectfile only (plugins only, Addon SDK v2, r426+)
-      // A dropdown list from which any project file in the project can be chosen.
-      // The property value at runtime is a relative path to fetch the project file from.
-      // filter: ".txt", // optional: filter list by file extension (e.g., ".txt" to only list .txt files)
     },
-    name: "Property Name",
-    desc: "Property Description",
-  }
-  */
+    name: "UV scroll speed",
+    desc: "Pixels per second the texture scrolls from start to end.",
+  },
+  {
+    type: PROPERTY_TYPE.FLOAT,
+    id: "defaultWidth",
+    options: {
+      initialValue: 16,
+      interpolatable: false,
+      minValue: 0,
+    },
+    name: "Default width",
+    desc: "Initial width assigned to control points.",
+  },
+  {
+    type: PROPERTY_TYPE.FLOAT,
+    id: "distortAmplitude",
+    options: {
+      initialValue: 0,
+      interpolatable: false,
+      minValue: 0,
+    },
+    name: "Distort amplitude",
+    desc: "Maximum pixel offset applied by the distortion pass.",
+  },
+  {
+    type: PROPERTY_TYPE.FLOAT,
+    id: "distortFrequency",
+    options: {
+      initialValue: 1,
+      interpolatable: false,
+      minValue: 0,
+    },
+    name: "Distort frequency",
+    desc: "Spatial frequency of the distortion wave.",
+  },
+  {
+    type: PROPERTY_TYPE.FLOAT,
+    id: "distortSpeed",
+    options: {
+      initialValue: 1,
+      interpolatable: false,
+    },
+    name: "Distort speed",
+    desc: "Speed multiplier for distortion phase advance.",
+  },
+  {
+    type: PROPERTY_TYPE.COMBO,
+    id: "distortAxis",
+    options: {
+      initialValue: "both",
+      interpolatable: false,
+      items: [
+        { x_only: "X only" },
+        { y_only: "Y only" },
+        { both: "Both" },
+        { perpendicular: "Perpendicular" },
+      ],
+    },
+    name: "Distort axis",
+    desc: "Which axis receives the distortion offset.",
+  },
+  {
+    type: PROPERTY_TYPE.COMBO,
+    id: "endCapStyle",
+    options: {
+      initialValue: "round",
+      interpolatable: false,
+      items: [
+        { round: "Round" },
+        { flat: "Flat" },
+        { square: "Square" },
+      ],
+    },
+    name: "End cap style",
+    desc: "Shape used at the start and end of the stroke.",
+  },
+  {
+    type: PROPERTY_TYPE.COMBO,
+    id: "blendMode",
+    options: {
+      initialValue: "normal",
+      interpolatable: false,
+      items: [
+        { normal: "Normal" },
+        { additive: "Additive" },
+        { multiply: "Multiply" },
+        { screen: "Screen" },
+      ],
+    },
+    name: "Blend mode",
+    desc: "Blend mode used when drawing the generated mesh.",
+  },
+  {
+    type: PROPERTY_TYPE.COMBO,
+    id: "samplingMode",
+    options: {
+      initialValue: "auto",
+      interpolatable: false,
+      items: [
+        { auto: "Auto" },
+        { nearest: "Nearest" },
+        { linear: "Linear" },
+      ],
+    },
+    name: "Sampling mode",
+    desc: "Texture sampling mode used for the stroke texture.",
+  },
+  {
+    type: PROPERTY_TYPE.CHECK,
+    id: "debugPoints",
+    options: {
+      initialValue: false,
+      interpolatable: false,
+    },
+    name: "Debug points",
+    desc: "Draw control-point markers in the editor and at runtime.",
+  },
+  {
+    type: PROPERTY_TYPE.COMBO,
+    id: "editorPreview",
+    options: {
+      initialValue: "wireframe",
+      interpolatable: false,
+      items: [
+        { wireframe: "Wireframe" },
+        { solid: "Solid" },
+        { animated: "Animated" },
+      ],
+    },
+    name: "Editor preview",
+    desc: "Controls how the line preview renders in the layout editor.",
+  },
 ];
