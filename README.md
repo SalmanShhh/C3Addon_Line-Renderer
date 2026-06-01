@@ -1,9 +1,9 @@
 <img src="./src/icon.svg" width="100" /><br>
 # Line Renderer 2D
 <i>Procedural mesh-distorted line renderer for ropes, beams, trails, and other dynamic strokes.</i> <br>
-### Version 1.0.0.0
+### Version 1.0.0.1
 
-[<img src="https://placehold.co/200x50/4493f8/FFF?text=Download&font=montserrat" width="200"/>](https://github.com/SalmanShhh/C3Addon_Line-Renderer-2D/releases/download/salmanshh_line_renderer2D-1.0.0.0.c3addon/salmanshh_line_renderer2D-1.0.0.0.c3addon)
+[<img src="https://placehold.co/200x50/4493f8/FFF?text=Download&font=montserrat" width="200"/>](https://github.com/SalmanShhh/C3Addon_Line-Renderer-2D/releases/download/salmanshh_line_renderer2D-1.0.0.1.c3addon/salmanshh_line_renderer2D-1.0.0.1.c3addon)
 <br>
 <sub> [See all releases](https://github.com/SalmanShhh/C3Addon_Line-Renderer-2D/releases) </sub> <br>
 
@@ -141,6 +141,8 @@ npm run dev
 
 ---
 ## Changelog
+
+**1.0.0.1**
 
 **1.0.0.0**
 
