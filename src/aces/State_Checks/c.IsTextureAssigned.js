@@ -8,5 +8,5 @@ export const config = {
 export const expose = true;
 
 export default function () {
-  return !!this._strokeTexturePath;
+  return !!this._hasTexture?.();
 }

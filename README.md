@@ -1,9 +1,9 @@
 <img src="./src/icon.svg" width="100" /><br>
 # Line Renderer 2D
 <i>Procedural mesh-distorted line renderer for ropes, beams, trails, and other dynamic strokes.</i> <br>
-### Version 1.0.0.1
+### Version 1.1.0.0
 
-[<img src="https://placehold.co/200x50/4493f8/FFF?text=Download&font=montserrat" width="200"/>](https://github.com/SalmanShhh/C3Addon_Line-Renderer-2D/releases/download/salmanshh_line_renderer2D-1.0.0.1.c3addon/salmanshh_line_renderer2D-1.0.0.1.c3addon)
+[<img src="https://placehold.co/200x50/4493f8/FFF?text=Download&font=montserrat" width="200"/>](https://github.com/SalmanShhh/C3Addon_Line-Renderer-2D/releases/download/salmanshh_line_renderer2D-1.1.0.0.c3addon/salmanshh_line_renderer2D-1.1.0.0.c3addon)
 <br>
 <sub> [See all releases](https://github.com/SalmanShhh/C3Addon_Line-Renderer-2D/releases) </sub> <br>
 
@@ -41,7 +41,6 @@ npm run dev
 | Property Name | Description | Type |
 | --- | --- | --- |
 | Initial point count | Number of control points allocated when the instance is created. | integer |
-| Stroke texture | Optional texture projected along the generated stroke mesh. | projectfile |
 | Texture tile length | World-space pixels per full texture repeat along the stroke. | float |
 | UV scroll speed | Pixels per second the texture scrolls from start to end. | float |
 | Default width | Initial width assigned to control points. | float |
@@ -141,6 +140,8 @@ npm run dev
 
 ---
 ## Changelog
+
+**1.1.0.0**
 
 **1.0.0.1**
 

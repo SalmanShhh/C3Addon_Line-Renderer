@@ -1,6 +1,8 @@
 # Line Renderer 2D Guide
 
-Line Renderer 2D is a Construct 3 world plugin for drawing procedural lines as dynamic mesh strips, so you can build ropes, beams, trails, rivers, and UI links without spawning many sprite segments. You define or update control points, widths, colors, and rendering settings, and the plugin rebuilds the mesh for you, giving you cleaner visuals, fewer objects, and event-sheet control over every effect.
+Line Renderer 2D is a Construct 3 world plugin for drawing procedural lines as dynamic mesh strips, so you can build ropes, beams, trails, rivers, and UI links without spawning many sprite segments. You define or update control points, widths, colors, and rendering settings; paint or import the object's own **image** to texture and tile the stroke; tint it and stack Construct **effects** on top; and the plugin rebuilds the mesh for you — giving cleaner visuals, fewer objects, and event-sheet control over every effect.
+
+> **Changed — texture handling.** The old `Stroke texture` project-file property has been **removed**. The stroke texture is now the object's **editable image**, painted/imported in the Animations Editor exactly like a Sprite (double-click the instance, or use *Edit*). It tiles along the stroke, respects the instance color/opacity filter, and supports effects. Projects that referenced the old property must set the object image instead.
 
 ## Table of Contents
 
@@ -53,8 +55,11 @@ Without a mesh line system, developers often place many rotated sprites to fake 
 |---|---|
 | **Control Point** | A point with x, y, width, and RGBA data used to build the line. |
 | **Mesh Strip** | The generated triangle geometry drawn by the plugin. |
+| **Stroke Image** | The object's own editable image, painted/imported like a Sprite and tiled along the line. |
 | **UV Scroll** | Texture movement along line length over time. |
 | **Distortion** | Vertex offset animation using amplitude, frequency, speed, and axis. |
+| **Color Filter** | Instance-wide tint and opacity applied on top of per-point colors. |
+| **Effects** | Construct shader effects stacked on the rendered stroke. |
 | **Coordinate Space** | Points interpreted as absolute world coordinates or relative local coordinates. |
 | **Render LOD** | Cap that reduces rendered point count for performance at distance. |
 
@@ -63,9 +68,9 @@ Without a mesh line system, developers often place many rotated sprites to fake 
 1. Add **Line Renderer 2D** to your project as a world object.
 2. Drop one instance on a layer.
 3. Set `Initial point count` to at least `2`.
-4. Optionally assign `Stroke texture` and set `Texture tile length`.
+4. Optional texture: **double-click the instance** (like a Sprite) to paint or import the object image, then set `Texture tile length` to control how often it repeats along the stroke. Leave the image blank to draw a solid line from per-point colors.
 5. In events, define points with actions like `SetPoint`, `AddPoint`, or `SetLine`.
-6. Tune distortion, caps, blend mode, and UV scroll.
+6. Tune distortion, caps, blend mode, and UV scroll. Optionally add Construct **effects** on the object and set the instance **color/opacity** in the Properties Bar.
 
 Example first working setup:
 
@@ -83,7 +88,6 @@ Event: On start of layout
 | Property | Type | Default | Description |
 |---|---|---:|---|
 | Initial point count | Integer | 2 | Number of control points allocated at create time. |
-| Stroke texture | Project file | none | Optional texture projected along the stroke. |
 | Texture tile length | Float | 64 | World pixels per full texture repeat. |
 | UV scroll speed | Float | 0 | Texture movement speed along the stroke. |
 | Default width | Float | 16 | Initial point width value. |
@@ -96,6 +100,8 @@ Event: On start of layout
 | Sampling mode | Combo | auto | Texture sampling mode: auto, nearest, linear. |
 | Debug points | Check | false | Draw control point markers. |
 | Editor preview | Combo | wireframe | Editor draw style: wireframe, solid, animated. |
+
+> **The stroke texture is the object's image, not a property.** Double-click the instance (or context-menu *Edit*) to open the image editor like a Sprite. The image **tiles** along the stroke (`Texture tile length`, `UV scroll speed`), respects the instance **color/opacity** filter shown in the Properties Bar, and supports Construct **effects** (Add effect on the object). Leave the image blank to draw a solid colored line from the per-point colors. The **Editor preview** now draws at the instance's real position, rotation, and size — including inside scene-graph parents — and shows the texture in *solid* / *animated* modes.
 
 ## 5. Managing Points and Shape Setup
 
@@ -146,6 +152,11 @@ Event: On start of layout
   // line now rotates and scales with the object transform
 ```
 
+Scene graph / parent objects:
+
+- In **relative** mode the stroke is built through the instance's live world transform, so when the Line Renderer is a **child** of another object (scene graph), it follows the parent's position, rotation, and scale automatically — both at runtime and in the editor preview.
+- In **absolute** mode points are literal world coordinates and ignore the instance transform, so a parented instance will not follow its parent. Use relative mode (or update points yourself) when you want parent-following.
+
 Gotchas:
 
 - In relative mode, object width and height affect transformed point spacing.
@@ -163,10 +174,18 @@ Event: Every tick
   // creates flowing and glowing beam behavior
 ```
 
+Texture, tiling, color, and effects:
+
+- The stroke samples the object's **image**. `Texture tile length` sets the world-space pixels per repeat; smaller values tile more often. `UV scroll speed` animates the texture along the line for flow/energy looks.
+- Tiling uses GPU repeat-wrap, so make the image **seamless left-to-right** to avoid visible seams between repeats.
+- The instance **color** and **opacity** (Properties Bar, or `Set opacity` action / `colorRgb` in script) tint the whole stroke on top of per-point colors.
+- Add Construct **effects** to the object as you would to a Sprite; they apply to the rendered stroke.
+
 Gotchas:
 
 - High amplitude on thin lines can look noisy.
 - For clear art, match texture pattern direction with UV flow direction.
+- A blank object image draws a solid line from per-point colors — paint/import the image when you want a textured stroke.
 
 ## 9. Performance Controls
 
@@ -269,7 +288,7 @@ Gotchas:
 | IsPointIndexValid | True when index references an existing point. |
 | IsDistortionActive | True when distortion amplitude is greater than zero. |
 | IsUVScrolling | True when UV scroll speed is non-zero. |
-| IsTextureAssigned | True when a texture is available. |
+| IsTextureAssigned | True when the object image has pixels (a stroke texture is present). |
 | HasMinimumPoints | True when point count is at least a threshold. |
 | IsCulled | True when line was culled on last tick. |
 | IsLODActive | True when LOD cap is actively reducing rendered points. |
@@ -855,6 +874,14 @@ inst.SetBlendMode(1); // 0 normal, 1 additive, 2 multiply, 3 screen
 inst.SetCoordSpace(1); // 0 absolute, 1 relative
 ```
 
+The instance **color filter** and **opacity** use the standard world-instance surface (there is no dedicated color action):
+
+```js
+inst.colorRgb = [1, 0.6, 0.3]; // tint the whole stroke (values 0-1)
+inst.opacity  = 0.5;           // master opacity (0-1)
+// per-point colors are separate: inst.SetAllColors(255, 200, 120, 100);
+```
+
 ### Reading state from script
 
 Expressions are for event sheets. Script reads runtime methods and getters directly.
@@ -984,6 +1011,38 @@ Event: Every 0.25 seconds
   Action: LineRenderer2D -> "Set render LOD to {0}", 0
 ```
 
+### Texture, Tiling, Color, and Effects
+
+The stroke is textured by the object's **own image** — there is no texture property to assign. Edit it like a Sprite:
+
+1. Double-click the instance in the Layout View (or right-click → *Edit*) to open the Animations Editor.
+2. Paint or import/paste your stroke texture. Make it **seamless left-to-right** so tiled repeats have no seam.
+3. Back in events, control how it maps and moves:
+
+```text
+Event: On start of layout
+  Action: LineRenderer2D -> "Set texture tile length to {0}", 96   // pixels per repeat
+  Action: LineRenderer2D -> "Set UV scroll speed to {0}", 70       // flow animation
+```
+
+How the layers combine:
+
+| Layer | Set by | Notes |
+|---|---|---|
+| Stroke image | Object image (edit like a Sprite) | Tiled along the line; blank image = solid line |
+| Per-point color | `SetPointColor`, `SetAllColors` | Interpolates between points for gradients/tapering |
+| Instance color filter | Properties Bar / `colorRgb` in script | Tints the whole stroke on top of per-point colors |
+| Master opacity | `SetOpacity` action | Multiplies the whole stroke |
+| Blend mode | `SetBlendMode` action / property | `additive` for glow, `multiply` for shadowing, etc. |
+| Effects | Add effect on the object (like a Sprite) | Applied to the final rendered stroke |
+
+Tips:
+
+- **Tiling needs `IsTiled` repeat-wrap**, which the addon enables for you — so UVs simply repeat as the line gets longer. You do not need to tile the texture by hand.
+- Use a tall, thin seamless image: width tiles **along** the line, height maps **across** the stroke width (edge to edge).
+- For energy/laser looks, combine `additive` blend, `UV scroll speed`, and a soft gradient image.
+- Effects (glow, warp, tint) stack on top of distortion — keep distortion modest when an effect already adds movement.
+
 ## 19. Tips and Common Mistakes
 
 - Keep point indices in range, or guard with `IsPointIndexValid` for dynamic loops.
@@ -992,6 +1051,11 @@ Event: Every 0.25 seconds
 - Relative space changes how transforms apply, so verify width and scale interactions.
 - If a line looks static, check `UVScrollSpeed` and `DistortAmplitude` are non-zero.
 - If color appears wrong, verify you are passing RGB 0-255 and opacity 0-100.
+- To texture a stroke, edit the **object image** (double-click, like a Sprite) — there is no texture property to assign anymore.
+- For clean tiling, make the image **seamless left-to-right**; the addon repeats it for you (no manual tiling needed).
+- A textured stroke that looks blank usually means the object image is empty — paint or import it.
+- Per-point color, the instance color filter, and effects are independent layers — combine them deliberately rather than fighting one with another.
+- The editor preview now follows the instance's position, rotation, size, and scene-graph parent — use *solid* or *animated* preview to see the texture in the Layout View.
 - Use debugger fields to confirm whether mesh is rebuilding too often.
 - Enable frustum culling for many off-screen lines.
 - Use one line instance per independent visual state.

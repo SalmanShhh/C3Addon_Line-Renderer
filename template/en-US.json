@@ -26,10 +26,6 @@
             "name": "Initial point count",
             "desc": "Number of control points allocated when the instance is created."
           },
-          "strokeTexture": {
-            "name": "Stroke texture",
-            "desc": "Optional texture projected along the generated stroke mesh."
-          },
           "textureTileLength": {
             "name": "Texture tile length",
             "desc": "World-space pixels per full texture repeat along the stroke."

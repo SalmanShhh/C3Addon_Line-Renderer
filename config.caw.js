@@ -69,12 +69,14 @@ export const info = {
     IsResizable: true,
     IsRotatable: true,
     Is3D: false,
-    HasImage: false,
-    IsTiled: false,
+    HasImage: true,
+    IsTiled: true,
     SupportsZElevation: false,
-    SupportsColor: false,
-    SupportsEffects: false,
-    MustPreDraw: false,
+    SupportsColor: true,
+    SupportsEffects: true,
+    // The stroke is drawn as a custom triangle mesh (not a plain sprite quad),
+    // so effects must be pre-drawn to an offscreen surface before the effect chain runs.
+    MustPreDraw: true,
 
     // PLUGIN object only
     IsSingleGlobal: false,
@@ -101,13 +103,6 @@ export const properties = [
     },
     name: "Initial point count",
     desc: "Number of control points allocated when the instance is created.",
-  },
-  {
-    type: PROPERTY_TYPE.PROJECTFILE,
-    id: "strokeTexture",
-    options: {},
-    name: "Stroke texture",
-    desc: "Optional texture projected along the generated stroke mesh.",
   },
   {
     type: PROPERTY_TYPE.FLOAT,

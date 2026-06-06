@@ -259,21 +259,26 @@ function applyDistortion(sample, options) {
   return { x: offset, y: offset };
 }
 
-function remapColor(sample, opacity) {
+function remapColor(sample, opacity, tint) {
+  // Point colors are stored premultiplied (rgb already include the point alpha),
+  // so master opacity scales rgb and alpha together. The optional tint scales rgb only.
   const alpha = clamp01(sample.a) * opacity;
+  const tr = tint ? clamp01(toFiniteNumber(tint[0], 1)) : 1;
+  const tg = tint ? clamp01(toFiniteNumber(tint[1], 1)) : 1;
+  const tb = tint ? clamp01(toFiniteNumber(tint[2], 1)) : 1;
   return {
-    r: clamp01(sample.r) * opacity,
-    g: clamp01(sample.g) * opacity,
-    b: clamp01(sample.b) * opacity,
+    r: clamp01(sample.r) * opacity * tr,
+    g: clamp01(sample.g) * opacity * tg,
+    b: clamp01(sample.b) * opacity * tb,
     a: alpha,
   };
 }
 
 function addVertex(mesh, vertex) {
-  mesh.positions.push(vertex.x, vertex.y);
+  // drawMesh expects 3 components per position (x, y, z); 2D strokes use z = 0.
+  mesh.positions.push(vertex.x, vertex.y, 0);
   mesh.uvs.push(vertex.u, vertex.v);
   mesh.colors.push(vertex.r, vertex.g, vertex.b, vertex.a);
-  mesh.buffer.push(vertex.x, vertex.y, vertex.u, vertex.v, vertex.r, vertex.g, vertex.b, vertex.a);
 
   mesh.bounds.left = Math.min(mesh.bounds.left, vertex.x);
   mesh.bounds.top = Math.min(mesh.bounds.top, vertex.y);
@@ -283,8 +288,8 @@ function addVertex(mesh, vertex) {
   return mesh.vertexCount++;
 }
 
-function addCap(mesh, sample, radius, isStart, opacity) {
-  const centerColor = remapColor(sample, opacity);
+function addCap(mesh, sample, radius, isStart, opacity, tint) {
+  const centerColor = remapColor(sample, opacity, tint);
   const centerIndex = addVertex(mesh, {
     x: sample.x,
     y: sample.y,
@@ -302,7 +307,7 @@ function addCap(mesh, sample, radius, isStart, opacity) {
   for (let step = 0; step <= CAP_SEGMENTS; step++) {
     const t = step / CAP_SEGMENTS;
     const angle = lerp(from, to, t);
-    const vertexColor = remapColor(sample, opacity);
+    const vertexColor = remapColor(sample, opacity, tint);
     edgeIndices.push(
       addVertex(mesh, {
         x: sample.x + Math.cos(angle) * radius,
@@ -326,8 +331,7 @@ export function buildStrokeMesh(options) {
       positions: new Float32Array(0),
       uvs: new Float32Array(0),
       colors: new Float32Array(0),
-      indices: new Uint32Array(0),
-      buffer: new Float32Array(0),
+      indices: new Uint16Array(0),
       bounds: null,
       lineLength: 0,
       vertexCount: 0,
@@ -355,8 +359,7 @@ export function buildStrokeMesh(options) {
       positions: new Float32Array(0),
       uvs: new Float32Array(0),
       colors: new Float32Array(0),
-      indices: new Uint32Array(0),
-      buffer: new Float32Array(0),
+      indices: new Uint16Array(0),
       bounds: null,
       lineLength,
       vertexCount: 0,
@@ -370,7 +373,6 @@ export function buildStrokeMesh(options) {
     uvs: [],
     colors: [],
     indices: [],
-    buffer: [],
     bounds: {
       left: Number.POSITIVE_INFINITY,
       top: Number.POSITIVE_INFINITY,
@@ -381,6 +383,7 @@ export function buildStrokeMesh(options) {
   };
 
   const opacity = clamp01(toFiniteNumber(options.opacity, 1));
+  const tint = Array.isArray(options.tint) ? options.tint : null;
   const stripIndices = [];
   const workingSamples = stripSamples.map((sample) => ({ ...sample }));
 
@@ -404,7 +407,7 @@ export function buildStrokeMesh(options) {
 
   for (const sample of workingSamples) {
     const distortion = applyDistortion(sample, options);
-    const color = remapColor(sample, opacity);
+    const color = remapColor(sample, opacity, tint);
     const width = Math.max(0, sample.width);
     const u = sample.arcLength / tileLength + uvOffset;
 
@@ -435,8 +438,8 @@ export function buildStrokeMesh(options) {
   }
 
   if (capStyle === "round") {
-    addCap(mesh, stripSamples[0], stripSamples[0].width, true, opacity);
-    addCap(mesh, stripSamples[stripSamples.length - 1], stripSamples[stripSamples.length - 1].width, false, opacity);
+    addCap(mesh, stripSamples[0], stripSamples[0].width, true, opacity, tint);
+    addCap(mesh, stripSamples[stripSamples.length - 1], stripSamples[stripSamples.length - 1].width, false, opacity, tint);
   }
 
   const bounds = mesh.vertexCount
@@ -447,8 +450,7 @@ export function buildStrokeMesh(options) {
     positions: new Float32Array(mesh.positions),
     uvs: new Float32Array(mesh.uvs),
     colors: new Float32Array(mesh.colors),
-    indices: new Uint32Array(mesh.indices),
-    buffer: new Float32Array(mesh.buffer),
+    indices: new Uint16Array(mesh.indices),
     bounds,
     lineLength,
     vertexCount: mesh.vertexCount,
@@ -462,10 +464,47 @@ export function createPreviewPointsFromRect(rect, width) {
   const right = toFiniteNumber(rect?.getRight?.() ?? rect?.right, 64);
   const bottom = toFiniteNumber(rect?.getBottom?.() ?? rect?.bottom, 8);
   const midY = (top + bottom) * 0.5;
+  const thickness = Math.abs(bottom - top) * 0.5;
 
   return [
-    makePoint(left, midY, width),
-    makePoint(right, midY, width),
+    makePoint(left, midY, thickness > 0 ? thickness : width),
+    makePoint(right, midY, thickness > 0 ? thickness : width),
+  ];
+}
+
+// Build a 2-point preview stroke from the instance's layout-space quad so the
+// editor preview tracks the instance position, rotation, size and scene-graph
+// parent transform (GetQuad() already returns final hierarchy-transformed coords).
+export function createPreviewPointsFromQuad(quad, fallbackWidth) {
+  if (!quad) {
+    return null;
+  }
+
+  const read = (name) =>
+    typeof quad[name] === "function" ? toFiniteNumber(quad[name](), NaN) : NaN;
+  const tlx = read("getTlx");
+  const tly = read("getTly");
+  const trx = read("getTrx");
+  const try_ = read("getTry");
+  const brx = read("getBrx");
+  const bry = read("getBry");
+  const blx = read("getBlx");
+  const bly = read("getBly");
+
+  if (![tlx, tly, trx, try_, brx, bry, blx, bly].every(Number.isFinite)) {
+    return null;
+  }
+
+  const leftX = (tlx + blx) * 0.5;
+  const leftY = (tly + bly) * 0.5;
+  const rightX = (trx + brx) * 0.5;
+  const rightY = (try_ + bry) * 0.5;
+  const leftEdge = lengthOf(blx - tlx, bly - tly);
+  const thickness = leftEdge > 0 ? leftEdge * 0.5 : Math.max(0, toFiniteNumber(fallbackWidth, 0));
+
+  return [
+    makePoint(leftX, leftY, thickness),
+    makePoint(rightX, rightY, thickness),
   ];
 }
 
@@ -482,12 +521,12 @@ export function remapUvsToTexRect(uvs, texRect) {
   const height = bottom - top;
   const remapped = new Float32Array(uvs.length);
 
+  // Linear remap into the source tex rect. U may exceed [0,1] when the stroke is
+  // longer than one tile; tiling relies on the texture's repeat wrap mode
+  // (enabled because the addon sets IsTiled, so the image is not sprite-sheeted).
   for (let index = 0; index < uvs.length; index += 2) {
-    const rawU = uvs[index];
-    const rawV = uvs[index + 1];
-    const tiledU = rawU - Math.floor(rawU);
-    remapped[index] = left + tiledU * width;
-    remapped[index + 1] = top + rawV * height;
+    remapped[index] = left + uvs[index] * width;
+    remapped[index + 1] = top + uvs[index + 1] * height;
   }
 
   return remapped;

@@ -24,21 +24,22 @@ export default function (parentClass) {
       super();
       this._setTicking(true);
 
+      // Property index order must match config.caw.js properties[] (strokeTexture
+      // was removed in favour of the editable object image / HasImage).
       const properties = this._getInitProperties();
       const initialPointCount = toCount(properties?.[0], 2);
-      this._strokeTexturePath = String(properties?.[1] ?? "").trim();
-      this._textureTileLength = Math.max(0.0001, toFiniteNumber(properties?.[2], 64));
-      this._uvScrollSpeed = toFiniteNumber(properties?.[3], 0);
-      this._defaultWidth = Math.max(0, toFiniteNumber(properties?.[4], 16));
-      this._distortAmplitude = Math.max(0, toFiniteNumber(properties?.[5], 0));
-      this._distortFrequency = Math.max(0, toFiniteNumber(properties?.[6], 1));
-      this._distortSpeed = toFiniteNumber(properties?.[7], 1);
-      this._distortAxis = getComboKey(properties?.[8], DISTORT_AXIS_KEYS, DISTORT_AXIS_KEYS[2]);
-      this._endCapStyle = getComboKey(properties?.[9], END_CAP_KEYS, END_CAP_KEYS[0]);
-      this._blendMode = getComboKey(properties?.[10], BLEND_MODE_KEYS, BLEND_MODE_KEYS[0]);
-      this._samplingMode = getComboKey(properties?.[11], SAMPLING_MODE_KEYS, SAMPLING_MODE_KEYS[0]);
-      this._debugPoints = !!properties?.[12];
-      this._editorPreview = properties?.[13];
+      this._textureTileLength = Math.max(0.0001, toFiniteNumber(properties?.[1], 64));
+      this._uvScrollSpeed = toFiniteNumber(properties?.[2], 0);
+      this._defaultWidth = Math.max(0, toFiniteNumber(properties?.[3], 16));
+      this._distortAmplitude = Math.max(0, toFiniteNumber(properties?.[4], 0));
+      this._distortFrequency = Math.max(0, toFiniteNumber(properties?.[5], 1));
+      this._distortSpeed = toFiniteNumber(properties?.[6], 1);
+      this._distortAxis = getComboKey(properties?.[7], DISTORT_AXIS_KEYS, DISTORT_AXIS_KEYS[2]);
+      this._endCapStyle = getComboKey(properties?.[8], END_CAP_KEYS, END_CAP_KEYS[0]);
+      this._blendMode = getComboKey(properties?.[9], BLEND_MODE_KEYS, BLEND_MODE_KEYS[0]);
+      this._samplingMode = getComboKey(properties?.[10], SAMPLING_MODE_KEYS, SAMPLING_MODE_KEYS[0]);
+      this._debugPoints = !!properties?.[11];
+      this._editorPreview = properties?.[12];
 
       this.events = {};
       this._points = createInitialPoints(initialPointCount, this._defaultWidth);
@@ -56,8 +57,7 @@ export default function (parentClass) {
       this._frustumCullingEnabled = false;
       this._isCulled = false;
       this._coordSpace = COORD_SPACE_KEYS[0];
-      this._strokeTexture = null;
-      this._strokeTexRect = null;
+      this._texture = null;
       this._relativeBaseWidth = Math.max(1e-4, Math.abs(toFiniteNumber(this.width, 1)));
       this._relativeBaseHeight = Math.max(1e-4, Math.abs(toFiniteNumber(this.height, 1)));
 
@@ -72,8 +72,64 @@ export default function (parentClass) {
     }
 
     onCreate() {
-      this._resolveStrokeTexture();
       this._syncInstanceAppearance();
+    }
+
+    // SDK texture lifecycle: Construct calls these to load/release the object
+    // image (HasImage). The image is editable in the editor like a Sprite frame.
+    async _loadTextures(renderer) {
+      const imageInfo = this._getImageInfo();
+      if (!imageInfo || typeof renderer?.loadTextureForImageInfo !== "function") {
+        return;
+      }
+
+      try {
+        const sampling = this._getLoadSampling();
+        this._texture = await renderer.loadTextureForImageInfo(
+          imageInfo,
+          sampling ? { sampling } : {}
+        );
+      } catch (_error) {
+        this._texture = null;
+      }
+    }
+
+    _releaseTextures(renderer) {
+      const imageInfo = this._getImageInfo();
+      if (imageInfo) {
+        renderer?.releaseTextureForImageInfo?.(imageInfo);
+      }
+      this._texture = null;
+    }
+
+    _getImageInfo() {
+      const objectType =
+        this.objectType ?? this._objectType ?? this.getObjectType?.() ?? null;
+      return (
+        objectType?.getImageInfo?.() ??
+        this.getCurrentImageInfo?.() ??
+        this.getImageInfo?.() ??
+        null
+      );
+    }
+
+    _getLoadSampling() {
+      if (this._samplingMode === "auto") {
+        return this.runtime?.sampling ?? undefined;
+      }
+      return getSamplingValue(this._samplingMode);
+    }
+
+    _resolveTexture(renderer) {
+      if (this._texture) {
+        return this._texture;
+      }
+
+      const imageInfo = this._getImageInfo();
+      if (imageInfo && typeof renderer?.getTextureForImageInfo === "function") {
+        this._texture = renderer.getTextureForImageInfo(imageInfo) ?? null;
+      }
+      return this._texture;
     }
 
     _tick() {
@@ -104,43 +160,48 @@ export default function (parentClass) {
     }
 
     _draw(renderer) {
-      if (this._isCulled || !this._meshData?.vertexCount) {
+      const mesh = this._meshData;
+      if (this._isCulled || !mesh?.vertexCount) {
         return;
       }
 
-      const blendMode = getBlendModeValue(this._blendMode);
-      if (blendMode === "normal") {
-        renderer.SetAlphaBlendMode?.();
-      } else {
-        renderer.SetBlendMode?.(blendMode);
-      }
+      // Geometry is drawn with normal premultiplied alpha. Because the addon sets
+      // MustPreDraw, Construct composites this pass to screen using the instance's
+      // native blend mode (this.blendMode, synced from the blend-mode property/ACE)
+      // and effect chain, so drawing non-normal here would double-apply the blend.
+      renderer.setAlphaBlendMode();
 
-      const texture = this._strokeTexture;
-      const texRect = this._strokeTexRect;
+      // Master opacity + color filter, applied once as the current (premultiplied)
+      // color. Per-vertex colors carry only the per-point premultiplied colors.
+      const opacity = clamp01(toFiniteNumber(this.opacity, 1));
+      const filter = Array.isArray(this.colorRgb) ? this.colorRgb : null;
+      const fr = filter ? clamp01(toFiniteNumber(filter[0], 1)) : 1;
+      const fg = filter ? clamp01(toFiniteNumber(filter[1], 1)) : 1;
+      const fb = filter ? clamp01(toFiniteNumber(filter[2], 1)) : 1;
+
+      const texture = this._resolveTexture(renderer);
+      let uvs = mesh.uvs;
       if (texture) {
-        renderer.SetTextureFillMode?.();
-        renderer.SetTexture?.(texture, getSamplingValue(this._samplingMode));
-        renderer.ResetColor?.();
+        const imageInfo = this._getImageInfo();
+        const texRect = imageInfo ? this._getTexRect(imageInfo) : null;
+        uvs = texRect ? remapUvsToTexRect(mesh.uvs, texRect) : mesh.uvs;
+        renderer.setTextureFillMode();
+        renderer.setTexture(texture, this._samplingMode === "auto" ? "auto" : getSamplingValue(this._samplingMode));
       } else {
-        renderer.SetColorFillMode?.();
-        renderer.SetColorRgba?.(1, 1, 1, this.opacity ?? 1);
+        renderer.setColorFillMode();
       }
 
-      const uvs = texture ? remapUvsToTexRect(this._meshData.uvs, texRect) : this._meshData.uvs;
-      if (typeof renderer.DrawMesh === "function") {
-        renderer.DrawMesh(
-          this._meshData.positions,
-          uvs,
-          this._meshData.indices,
-          this._meshData.colors
-        );
-      } else if (typeof renderer.DrawTriangleStrip === "function") {
-        renderer.DrawTriangleStrip(this._meshData.buffer);
-      }
+      renderer.setColorRgba(fr * opacity, fg * opacity, fb * opacity, opacity);
+      renderer.drawMesh(mesh.positions, uvs, mesh.indices, mesh.colors);
 
       if (this._debugPoints) {
         this._drawDebugPoints(renderer);
       }
+    }
+
+    _getTexRect(imageInfo) {
+      const rect = imageInfo?.getTexRect?.() ?? imageInfo?.texRect ?? null;
+      return rect ?? null;
     }
 
     on(tag, callback, options) {
@@ -175,27 +236,11 @@ export default function (parentClass) {
       }
     }
 
-    _resolveStrokeTexture() {
-      if (!this._strokeTexturePath) {
-        this._strokeTexture = null;
-        this._strokeTexRect = null;
-        return;
-      }
-
-      try {
-        const assetManager =
-          this.runtime?.getAssetManager?.() ?? this.runtime?.assetManager ?? this.runtime?.assets;
-        const texture =
-          assetManager?.getTexture?.(this._strokeTexturePath) ??
-          assetManager?.GetTexture?.(this._strokeTexturePath) ??
-          null;
-        this._strokeTexture = texture;
-        this._strokeTexRect =
-          texture?.GetTexRect?.() ?? texture?.getTexRect?.() ?? texture?.texRect ?? null;
-      } catch (_error) {
-        this._strokeTexture = null;
-        this._strokeTexRect = null;
-      }
+    _hasTexture() {
+      const imageInfo = this._getImageInfo();
+      const size = imageInfo?.getSize?.();
+      const width = toFiniteNumber(imageInfo?.width ?? size?.[0], 0);
+      return !!imageInfo && width > 0;
     }
 
     _syncInstanceAppearance() {
@@ -245,7 +290,9 @@ export default function (parentClass) {
         distortPhase: this._distortPhase,
         distortAxis: this._distortAxis,
         endCapStyle: this._endCapStyle,
-        opacity: clamp01(toFiniteNumber(this.opacity, 1)),
+        // Master opacity / color filter are applied per-draw (see _draw), so the
+        // baked vertex colors carry only the per-point premultiplied colors.
+        opacity: 1,
         relativeTransform:
           this._coordSpace === "relative" ? this._getRelativeTransform() : null,
       });
@@ -298,13 +345,13 @@ export default function (parentClass) {
     }
 
     _drawDebugPoints(renderer) {
-      renderer.SetColorFillMode?.();
+      renderer.setColorFillMode();
+      renderer.setColorRgba(1, 0.25, 0.25, 1);
 
       for (let index = 0; index < this._points.length; index++) {
         const point = this._getWorldPoint(index);
         const size = 3;
-        renderer.SetColorRgba?.(1, 0.25, 0.25, 1);
-        renderer.Rect2?.(point.x - size, point.y - size, point.x + size, point.y + size);
+        renderer.rect2(point.x - size, point.y - size, point.x + size, point.y + size);
       }
     }
 
