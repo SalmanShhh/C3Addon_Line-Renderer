@@ -1,6 +1,6 @@
 export const config = {
   returnType: "number",
-  description: "Current UV scroll speed.",
+  description: "The texture scroll speed, in pixels per second.",
   params: [],
 };
 

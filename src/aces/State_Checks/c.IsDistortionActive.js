@@ -1,7 +1,7 @@
 export const config = {
-  listName: "Is distortion active",
-  displayText: "Distortion is active",
-  description: "True if distortion amplitude is greater than zero.",
+  listName: "Is distorting",
+  displayText: "{my} is distorting",
+  description: "True if the distortion amplitude is greater than 0.",
   params: [],
 };
 

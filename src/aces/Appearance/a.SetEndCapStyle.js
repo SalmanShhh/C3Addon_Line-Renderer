@@ -1,17 +1,17 @@
 import { END_CAP_KEYS } from "../../shared/meshstrokeShared.js";
 
 export const config = {
-  listName: "Set end cap style",
-  displayText: "Set end cap style to {0}",
-  description: "Set the start and end cap style.",
+  listName: "Set end caps",
+  displayText: "Set {my} end caps to {0}",
+  description: "Set the shape of the start and end of the line.",
   params: [
     {
       id: "style",
-      name: "Style",
-      desc: "Cap style.",
+      name: "End caps",
+      desc: "None cuts off at the end point. Square and Round extend by half the thickness.",
       type: "combo",
       initialValue: "round",
-      items: [{ round: "Round" }, { flat: "Flat" }, { square: "Square" }],
+      items: [{ round: "Round" }, { flat: "None" }, { square: "Square" }],
     },
   ],
 };

@@ -1,6 +1,6 @@
 export const config = {
   returnType: "string",
-  description: "Current coordinate space.",
+  description: "The co-ordinate space: \"absolute\" or \"relative\".",
   params: [],
 };
 

@@ -1,6 +1,6 @@
 export const config = {
   returnType: "number",
-  description: "Current distortion subdivision count.",
+  description: "The number of mesh subdivisions per segment.",
   params: [],
 };
 

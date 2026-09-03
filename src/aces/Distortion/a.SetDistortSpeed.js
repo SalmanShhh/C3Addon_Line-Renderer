@@ -1,8 +1,8 @@
 export const config = {
-  listName: "Set distort speed",
-  displayText: "Set distort speed to {0}",
-  description: "Set distortion speed.",
-  params: [{ id: "speed", name: "Speed", desc: "Speed.", type: "number", initialValue: "1" }],
+  listName: "Set distortion speed",
+  displayText: "Set {my} distortion speed to {0}",
+  description: "Set how fast the distortion wave moves along the line.",
+  params: [{ id: "speed", name: "Speed", desc: "How fast the wave moves along the line.", type: "number", initialValue: "1" }],
 };
 
 export const expose = true;

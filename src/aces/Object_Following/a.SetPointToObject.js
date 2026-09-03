@@ -1,10 +1,10 @@
 export const config = {
   listName: "Set point to object",
-  displayText: "Set point {0} to object {1}",
-  description: "Set a point position from the first picked instance.",
+  displayText: "Set {my} point {0} to position of {1}",
+  description: "Set a point to the position and Z elevation of the first picked instance of an object.",
   params: [
-    { id: "index", name: "Index", desc: "Point index.", type: "number", initialValue: "0" },
-    { id: "object", name: "Object", desc: "Object to read.", type: "object" },
+    { id: "index", name: "Index", desc: "The zero-based index of the point.", type: "number", initialValue: "0" },
+    { id: "object", name: "Object", desc: "The object to take the position from.", type: "object" },
   ],
 };
 
@@ -17,7 +17,10 @@ export default function (index, object) {
     return;
   }
 
-  this._points[pointIndex].x = +objectInstance.x || 0;
-  this._points[pointIndex].y = +objectInstance.y || 0;
+  const position = this._instanceToPointSpace(objectInstance);
+  const point = this._points[pointIndex];
+  point.x = position.x;
+  point.y = position.y;
+  point.z = position.z;
   this._markMeshDirty();
 }

@@ -1,7 +1,7 @@
 export const config = {
   listName: "On point count changed",
-  displayText: "On point count changed",
-  description: "Triggered when the point count changes.",
+  displayText: "On {my} point count changed",
+  description: "Triggered when a point is added or removed.",
   isTrigger: true,
   params: [],
 };

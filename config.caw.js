@@ -5,17 +5,18 @@ import {
   PROPERTY_TYPE,
 } from "./template/enums.js";
 import _version from "./version.js";
-export const addonType = ADDON_TYPE.PLUGIN;
+export const addonType = ADDON_TYPE.BEHAVIOR;
+// `type` is ignored for behaviors but required by the config schema.
 export const type = PLUGIN_TYPE.WORLD;
-export const id = "salmanshh_line_renderer2D";
-export const name = "Line Renderer 2D";
+export const id = "salmanshh_line_renderer";
+export const name = "Line Renderer";
 export const version = _version;
 export const minConstructVersion = undefined;
 export const author = "SalmanShh";
 export const website = "https://www.construct.net";
 export const documentation = "https://www.construct.net";
 export const description =
-  "Procedural mesh-distorted line renderer for ropes, beams, trails, and other dynamic strokes.";
+  "Draw a Sprite or Tiled Background as a line, rope or beam along a path of points using mesh distortion, in 2D or 3D.";
 export const category = ADDON_CATEGORY.GENERAL;
 
 export const hasDomside = false;
@@ -38,60 +39,49 @@ export const files = {
   cordovaResourceFiles: [],
 };
 
+// Folder ids -> category names shown in the Construct event editor.
 export const aceCategories = {
-  Setup: "Setup",
-  Point_Control: "Point Control",
-  Path_Building: "Path Building",
-  Object_Following: "Object Following",
-  Coordinate_Space: "Coordinate Space",
+  Setup: "Points",
+  Point_Control: "Point properties",
+  Path_Building: "Lines & paths",
+  Object_Following: "Objects",
+  Coordinate_Space: "Co-ordinates",
   Distortion: "Distortion",
   Appearance: "Appearance",
   Performance: "Performance",
-  Events: "Events",
-  State_Checks: "State Checks",
-  Values: "Values",
+  Events: "Line",
+  State_Checks: "Line",
+  Values: "Line",
 };
 
 export const info = {
   // icon: "icon.svg",
-  // PLUGIN world only
-  // defaultImageUrl: "default-image.png",
   Set: {
     // COMMON to all
     CanBeBundled: true,
     IsDeprecated: false,
     GooglePlayServicesEnabled: false,
 
-    // BEHAVIOR only
-    IsOnlyOneAllowed: false,
-
-    // PLUGIN world only
-    IsResizable: true,
-    IsRotatable: true,
-    Is3D: false,
-    HasImage: true,
-    IsTiled: true,
-    SupportsZElevation: false,
-    SupportsColor: true,
-    SupportsEffects: true,
-    // The stroke is drawn as a custom triangle mesh (not a plain sprite quad),
-    // so effects must be pre-drawn to an offscreen surface before the effect chain runs.
-    MustPreDraw: true,
-
-    // PLUGIN object only
-    IsSingleGlobal: false,
+    // BEHAVIOR only. The behavior owns the host object's mesh, so two copies on
+    // one object would fight over it.
+    IsOnlyOneAllowed: true,
   },
-  // PLUGIN only
+  // PLUGIN only (unused for behaviors, but required by the config schema)
   AddCommonACEs: {
-    Position: true,
-    SceneGraph: true,
-    Size: true,
-    Angle: true,
+    Position: false,
+    SceneGraph: false,
+    Size: false,
+    Angle: false,
     Appearance: false,
-    ZOrder: true,
+    ZOrder: false,
   },
 };
 
+// NOTE: the runtime reads these by index in src/runtime/instance.js
+// (_getInitProperties()). Keep the order in sync when adding/removing entries.
+// "Enabled" must always stay LAST, like the built-in behaviors.
+// Anything the host object already defines (image, texture tiling, line
+// thickness, opacity, color, blend mode, effects) is deliberately not a property.
 export const properties = [
   {
     type: PROPERTY_TYPE.INTEGER,
@@ -102,18 +92,18 @@ export const properties = [
       minValue: 2,
     },
     name: "Initial point count",
-    desc: "Number of control points allocated when the instance is created.",
+    desc: "The number of points the line starts with. They are spread across the object so it initially looks unchanged.",
   },
   {
-    type: PROPERTY_TYPE.FLOAT,
-    id: "textureTileLength",
+    type: PROPERTY_TYPE.COMBO,
+    id: "coordSpace",
     options: {
-      initialValue: 64,
+      initialValue: "relative",
       interpolatable: false,
-      minValue: 0.0001,
+      items: [{ absolute: "Absolute (layout)" }, { relative: "Relative (object)" }],
     },
-    name: "Texture tile length",
-    desc: "World-space pixels per full texture repeat along the stroke.",
+    name: "Co-ordinate space",
+    desc: "Absolute uses layout co-ordinates. Relative uses co-ordinates relative to the object's position, angle and size, so the line moves with the object.",
   },
   {
     type: PROPERTY_TYPE.FLOAT,
@@ -122,67 +112,8 @@ export const properties = [
       initialValue: 0,
       interpolatable: false,
     },
-    name: "UV scroll speed",
-    desc: "Pixels per second the texture scrolls from start to end.",
-  },
-  {
-    type: PROPERTY_TYPE.FLOAT,
-    id: "defaultWidth",
-    options: {
-      initialValue: 16,
-      interpolatable: false,
-      minValue: 0,
-    },
-    name: "Default width",
-    desc: "Initial width assigned to control points.",
-  },
-  {
-    type: PROPERTY_TYPE.FLOAT,
-    id: "distortAmplitude",
-    options: {
-      initialValue: 0,
-      interpolatable: false,
-      minValue: 0,
-    },
-    name: "Distort amplitude",
-    desc: "Maximum pixel offset applied by the distortion pass.",
-  },
-  {
-    type: PROPERTY_TYPE.FLOAT,
-    id: "distortFrequency",
-    options: {
-      initialValue: 1,
-      interpolatable: false,
-      minValue: 0,
-    },
-    name: "Distort frequency",
-    desc: "Spatial frequency of the distortion wave.",
-  },
-  {
-    type: PROPERTY_TYPE.FLOAT,
-    id: "distortSpeed",
-    options: {
-      initialValue: 1,
-      interpolatable: false,
-    },
-    name: "Distort speed",
-    desc: "Speed multiplier for distortion phase advance.",
-  },
-  {
-    type: PROPERTY_TYPE.COMBO,
-    id: "distortAxis",
-    options: {
-      initialValue: "both",
-      interpolatable: false,
-      items: [
-        { x_only: "X only" },
-        { y_only: "Y only" },
-        { both: "Both" },
-        { perpendicular: "Perpendicular" },
-      ],
-    },
-    name: "Distort axis",
-    desc: "Which axis receives the distortion offset.",
+    name: "Texture scroll speed",
+    desc: "How fast the image scrolls along the line, in pixels per second (Tiled Background only).",
   },
   {
     type: PROPERTY_TYPE.COMBO,
@@ -192,67 +123,134 @@ export const properties = [
       interpolatable: false,
       items: [
         { round: "Round" },
-        { flat: "Flat" },
+        { flat: "None" },
         { square: "Square" },
       ],
     },
-    name: "End cap style",
-    desc: "Shape used at the start and end of the stroke.",
+    name: "End caps",
+    desc: "The shape of the start and end of the line. None cuts off at the end point; Square and Round extend by half the thickness.",
   },
   {
     type: PROPERTY_TYPE.COMBO,
-    id: "blendMode",
+    id: "ribbonFacing",
     options: {
-      initialValue: "normal",
+      initialValue: "flat",
       interpolatable: false,
       items: [
-        { normal: "Normal" },
-        { additive: "Additive" },
-        { multiply: "Multiply" },
-        { screen: "Screen" },
+        { flat: "Flat" },
+        { billboard: "Billboard" },
+        { up_vector: "Up vector" },
       ],
     },
-    name: "Blend mode",
-    desc: "Blend mode used when drawing the generated mesh.",
+    name: "Facing",
+    desc: "How the width of the line is oriented in 3D. Flat stays in the layout plane, Billboard faces the camera, Up vector follows the up vector.",
+  },
+  {
+    type: PROPERTY_TYPE.FLOAT,
+    id: "distortAmplitude",
+    options: {
+      initialValue: 0,
+      interpolatable: false,
+      minValue: 0,
+    },
+    name: "Distortion amplitude",
+    desc: "The maximum offset of the distortion wave, in pixels. 0 disables distortion.",
+  },
+  {
+    type: PROPERTY_TYPE.FLOAT,
+    id: "distortFrequency",
+    options: {
+      initialValue: 1,
+      interpolatable: false,
+      minValue: 0,
+    },
+    name: "Distortion frequency",
+    desc: "The frequency of the distortion wave along the line.",
+  },
+  {
+    type: PROPERTY_TYPE.FLOAT,
+    id: "distortSpeed",
+    options: {
+      initialValue: 1,
+      interpolatable: false,
+    },
+    name: "Distortion speed",
+    desc: "How fast the distortion wave moves along the line.",
   },
   {
     type: PROPERTY_TYPE.COMBO,
-    id: "samplingMode",
+    id: "distortAxis",
     options: {
-      initialValue: "auto",
+      initialValue: "both",
       interpolatable: false,
       items: [
-        { auto: "Auto" },
-        { nearest: "Nearest" },
-        { linear: "Linear" },
+        { x_only: "X" },
+        { y_only: "Y" },
+        { both: "X and Y" },
+        { perpendicular: "Perpendicular" },
+        { z_only: "Z elevation" },
       ],
     },
-    name: "Sampling mode",
-    desc: "Texture sampling mode used for the stroke texture.",
+    name: "Distortion axis",
+    desc: "The direction the distortion wave moves points in.",
+  },
+  {
+    type: PROPERTY_TYPE.INTEGER,
+    id: "distortResolution",
+    options: {
+      initialValue: 1,
+      interpolatable: false,
+      minValue: 1,
+    },
+    name: "Distortion resolution",
+    desc: "The number of mesh subdivisions per segment. Increase for smoother distortion on long segments.",
   },
   {
     type: PROPERTY_TYPE.CHECK,
-    id: "debugPoints",
+    id: "autoFit",
     options: {
       initialValue: false,
       interpolatable: false,
     },
-    name: "Debug points",
-    desc: "Draw control-point markers in the editor and at runtime.",
+    name: "Auto-fit to line",
+    desc: "Move and resize the object to cover the line after each update (absolute co-ordinate space only). Keeps collisions and on-screen checks accurate for long lines.",
   },
   {
     type: PROPERTY_TYPE.COMBO,
-    id: "editorPreview",
+    id: "joinStyle",
     options: {
-      initialValue: "wireframe",
+      initialValue: "round",
       interpolatable: false,
       items: [
-        { wireframe: "Wireframe" },
-        { solid: "Solid" },
-        { animated: "Animated" },
+        { simple: "Simple" },
+        { miter: "Miter" },
+        { bevel: "Bevel" },
+        { round: "Round" },
       ],
     },
-    name: "Editor preview",
-    desc: "Controls how the line preview renders in the layout editor.",
+    name: "Joins",
+    desc: "How corners between segments are drawn. Simple is cheapest but thins at corners, Miter is sharp, Bevel is chipped, Round is rounded.",
+  },
+  {
+    type: PROPERTY_TYPE.INTEGER,
+    id: "crossSection",
+    options: {
+      initialValue: 2,
+      interpolatable: false,
+      minValue: 2,
+      maxValue: 32,
+    },
+    name: "Cross-section points",
+    desc: "The number of points around the line. 2 draws a flat ribbon; 3 or more draws a 3D tube (joins become Simple).",
+  },
+  {
+    type: PROPERTY_TYPE.CHECK,
+    id: "enabled",
+    options: {
+      initialValue: true,
+      interpolatable: false,
+    },
+    name: "Enabled",
+    desc: "Whether the behavior is initially enabled.",
   },
 ];

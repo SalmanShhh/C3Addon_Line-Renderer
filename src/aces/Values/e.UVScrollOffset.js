@@ -1,6 +1,6 @@
 export const config = {
   returnType: "number",
-  description: "Accumulated UV scroll offset.",
+  description: "How far the texture has scrolled along the line, in pixels.",
   params: [],
 };
 

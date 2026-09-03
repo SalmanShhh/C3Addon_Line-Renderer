@@ -1,8 +1,8 @@
 export const config = {
-  listName: "Set distort amplitude",
-  displayText: "Set distort amplitude to {0}",
-  description: "Set distortion amplitude.",
-  params: [{ id: "amplitude", name: "Amplitude", desc: "Amplitude.", type: "number", initialValue: "0" }],
+  listName: "Set distortion amplitude",
+  displayText: "Set {my} distortion amplitude to {0}",
+  description: "Set the maximum offset of the distortion wave. 0 disables distortion.",
+  params: [{ id: "amplitude", name: "Amplitude", desc: "The maximum offset of the wave, in pixels.", type: "number", initialValue: "0" }],
 };
 
 export const expose = true;

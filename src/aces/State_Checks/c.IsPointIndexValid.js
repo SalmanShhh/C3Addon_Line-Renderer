@@ -1,8 +1,8 @@
 export const config = {
-  listName: "Is point index valid",
-  displayText: "Point index {0} is valid",
-  description: "True if the index points to an existing control point.",
-  params: [{ id: "index", name: "Index", desc: "Point index.", type: "number", initialValue: "0" }],
+  listName: "Point exists",
+  displayText: "{my} point {0} exists",
+  description: "True if a point with the given index exists.",
+  params: [{ id: "index", name: "Index", desc: "The zero-based index of the point.", type: "number", initialValue: "0" }],
 };
 
 export const expose = true;

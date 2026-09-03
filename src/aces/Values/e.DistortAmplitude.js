@@ -1,6 +1,6 @@
 export const config = {
   returnType: "number",
-  description: "Current distortion amplitude.",
+  description: "The distortion amplitude, in pixels.",
   params: [],
 };
 

@@ -1,6 +1,6 @@
 export const config = {
   returnType: "number",
-  description: "Current render LOD cap.",
+  description: "The maximum drawn points setting, or 0 for all points.",
   params: [],
 };
 

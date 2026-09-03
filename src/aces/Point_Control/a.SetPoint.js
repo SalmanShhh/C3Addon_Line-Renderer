@@ -1,12 +1,12 @@
 export const config = {
   listName: "Set point",
-  displayText: "Set point {0} to ({1}, {2}) width {3}",
+  displayText: "Set {my} point {0} to ({1}, {2}) with width {3}",
   description: "Set the position and width of a point.",
   params: [
-    { id: "index", name: "Index", desc: "Point index.", type: "number", initialValue: "0" },
-    { id: "x", name: "X", desc: "Point X.", type: "number", initialValue: "0" },
-    { id: "y", name: "Y", desc: "Point Y.", type: "number", initialValue: "0" },
-    { id: "width", name: "Width", desc: "Point width.", type: "number", initialValue: "16" },
+    { id: "index", name: "Index", desc: "The zero-based index of the point.", type: "number", initialValue: "0" },
+    { id: "x", name: "X", desc: "The X co-ordinate of the point.", type: "number", initialValue: "0" },
+    { id: "y", name: "Y", desc: "The Y co-ordinate of the point.", type: "number", initialValue: "0" },
+    { id: "width", name: "Width", desc: "Half the thickness of the line at this point, in pixels.", type: "number", initialValue: "16" },
   ],
 };
 

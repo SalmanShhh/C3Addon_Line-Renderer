@@ -1,7 +1,7 @@
 export const config = {
-  listName: "Is UV scrolling",
-  displayText: "UV is scrolling",
-  description: "True if UV scroll speed is non-zero.",
+  listName: "Is texture scrolling",
+  displayText: "{my} texture is scrolling",
+  description: "True if the texture scroll speed is not 0.",
   params: [],
 };
 

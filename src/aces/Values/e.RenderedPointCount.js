@@ -1,6 +1,6 @@
 export const config = {
   returnType: "number",
-  description: "Rendered point count used in the last mesh build.",
+  description: "The number of points used to draw the line after the maximum drawn points limit.",
   params: [],
 };
 

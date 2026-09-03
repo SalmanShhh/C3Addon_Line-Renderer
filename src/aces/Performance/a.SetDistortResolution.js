@@ -1,8 +1,8 @@
 export const config = {
-  listName: "Set distort resolution",
-  displayText: "Set distort resolution to {0}",
-  description: "Set the number of vertex pairs per segment.",
-  params: [{ id: "subdivisions", name: "Subdivisions", desc: "Subdivision count.", type: "number", initialValue: "1" }],
+  listName: "Set distortion resolution",
+  displayText: "Set {my} distortion resolution to {0}",
+  description: "Set the number of mesh subdivisions per segment used for distortion.",
+  params: [{ id: "subdivisions", name: "Subdivisions", desc: "The number of mesh subdivisions per segment (at least 1).", type: "number", initialValue: "1" }],
 };
 
 export const expose = true;

@@ -1,7 +1,7 @@
 export const config = {
   returnType: "number",
-  description: "Width of a control point.",
-  params: [{ id: "index", name: "Index", desc: "Control point index.", type: "number" }],
+  description: "The width (half thickness) of the line at a point.",
+  params: [{ id: "index", name: "Index", desc: "The zero-based index of the point.", type: "number" }],
 };
 
 export const expose = true;

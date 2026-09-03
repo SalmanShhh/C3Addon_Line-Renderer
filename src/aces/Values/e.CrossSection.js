@@ -1,11 +1,11 @@
 export const config = {
   returnType: "number",
-  description: "Current texture tile length.",
+  description: "The number of cross-section points (2 for a ribbon).",
   params: [],
 };
 
 export const expose = true;
 
 export default function () {
-  return this.MeshTextureTileLength;
+  return this.MeshCrossSection;
 }

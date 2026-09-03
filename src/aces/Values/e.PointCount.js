@@ -1,6 +1,6 @@
 export const config = {
   returnType: "number",
-  description: "Total number of control points.",
+  description: "The number of points in the line.",
   params: [],
 };
 

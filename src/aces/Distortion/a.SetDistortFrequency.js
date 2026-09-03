@@ -1,8 +1,8 @@
 export const config = {
-  listName: "Set distort frequency",
-  displayText: "Set distort frequency to {0}",
-  description: "Set distortion frequency.",
-  params: [{ id: "frequency", name: "Frequency", desc: "Frequency.", type: "number", initialValue: "1" }],
+  listName: "Set distortion frequency",
+  displayText: "Set {my} distortion frequency to {0}",
+  description: "Set the frequency of the distortion wave along the line.",
+  params: [{ id: "frequency", name: "Frequency", desc: "The frequency of the wave along the line.", type: "number", initialValue: "1" }],
 };
 
 export const expose = true;

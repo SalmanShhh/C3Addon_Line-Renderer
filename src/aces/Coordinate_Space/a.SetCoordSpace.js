@@ -1,14 +1,14 @@
 import { COORD_SPACE_KEYS } from "../../shared/meshstrokeShared.js";
 
 export const config = {
-  listName: "Set coordinate space",
-  displayText: "Set coordinate space to {0}",
-  description: "Choose absolute or relative point coordinates.",
+  listName: "Set co-ordinate space",
+  displayText: "Set {my} co-ordinate space to {0}",
+  description: "Set whether points are in layout co-ordinates (absolute) or relative to the object (relative).",
   params: [
     {
       id: "space",
-      name: "Space",
-      desc: "Coordinate space.",
+      name: "Co-ordinate space",
+      desc: "Absolute uses layout co-ordinates. Relative uses co-ordinates relative to the object's position, angle and size.",
       type: "combo",
       initialValue: "absolute",
       items: [{ absolute: "Absolute" }, { relative: "Relative" }],

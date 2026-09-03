@@ -1,6 +1,6 @@
 export const config = {
   returnType: "number",
-  description: "Length of the last built polyline.",
+  description: "The length of the line, in pixels.",
   params: [],
 };
 

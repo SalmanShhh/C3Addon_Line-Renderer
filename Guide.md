@@ -1,1062 +1,862 @@
-# Line Renderer 2D Guide
+# Line Renderer Guide
 
-Line Renderer 2D is a Construct 3 world plugin for drawing procedural lines as dynamic mesh strips, so you can build ropes, beams, trails, rivers, and UI links without spawning many sprite segments. You define or update control points, widths, colors, and rendering settings; paint or import the object's own **image** to texture and tile the stroke; tint it and stack Construct **effects** on top; and the plugin rebuilds the mesh for you — giving cleaner visuals, fewer objects, and event-sheet control over every effect.
+Line Renderer is a Construct 3 **behavior** for **Sprite** and **Tiled Background** objects. Add it to an object and that object becomes a procedural line: a rope, a beam, a trail, a river, a cable or a UI connector, built from a list of **control points** you edit from events. The behavior does not draw anything itself. It rewrites the host object's **mesh** every time the line changes, so Construct keeps drawing the host with its own image, animation frames, opacity, color, blend mode, effects, Z order and collision polygon. You get one object per line, no chains of rotated sprite segments, and full event-sheet control over shape, width, texture tiling and distortion.
 
-> **Changed — texture handling.** The old `Stroke texture` project-file property has been **removed**. The stroke texture is now the object's **editable image**, painted/imported in the Animations Editor exactly like a Sprite (double-click the instance, or use *Edit*). It tiles along the stroke, respects the instance color/opacity filter, and supports effects. Projects that referenced the old property must set the object image instead.
+> **Version 2 changed the addon from a world plugin into a behavior.** Old "Line Renderer 2D" objects are not converted automatically. Replace each one with a Tiled Background (or Sprite) that carries the Line Renderer behavior, paint the line image on that object, and re-add the point and path actions under the behavior. Per-point color and the editor preview are gone: the host object now provides all appearance, and Construct meshes have no per-vertex color.
 
 ## Table of Contents
 
 1. [Scenarios Where This Addon Excels](#1-scenarios-where-this-addon-excels)
 2. [Core Concepts](#2-core-concepts)
 3. [Project Setup](#3-project-setup)
-4. [Plugin Properties](#4-plugin-properties)
-5. [Managing Points and Shape Setup](#5-managing-points-and-shape-setup)
+4. [Behavior Properties](#4-behavior-properties)
+5. [Managing Points](#5-managing-points)
 6. [Path Building and Object Linking](#6-path-building-and-object-linking)
-7. [Coordinate Space and Transform Behavior](#7-coordinate-space-and-transform-behavior)
-8. [Distortion and Appearance](#8-distortion-and-appearance)
-9. [Performance Controls](#9-performance-controls)
-10. [Actions Reference](#10-actions-reference)
-11. [Conditions Reference](#11-conditions-reference)
-12. [Expressions Reference](#12-expressions-reference)
-13. [Triggers Reference](#13-triggers-reference)
-14. [System Use Cases](#14-system-use-cases)
-15. [Game Use Cases](#15-game-use-cases)
-16. [C3 Debugger](#16-c3-debugger)
-17. [Scripting (C3 Script / JavaScript)](#17-scripting-c3-script--javascript)
-18. [Feature Deep-Dives](#18-feature-deep-dives)
-19. [Tips and Common Mistakes](#19-tips-and-common-mistakes)
+7. [Coordinate Space and Auto-Fit](#7-coordinate-space-and-auto-fit)
+8. [Texture Mapping and Scrolling](#8-texture-mapping-and-scrolling)
+9. [Distortion, Caps and 3D Facing](#9-distortion-caps-and-3d-facing)
+10. [Performance Controls](#10-performance-controls)
+11. [Actions Reference](#11-actions-reference)
+12. [Conditions Reference](#12-conditions-reference)
+13. [Expressions Reference](#13-expressions-reference)
+14. [Triggers Reference](#14-triggers-reference)
+15. [System Use Cases](#15-system-use-cases)
+16. [Game Use Cases](#16-game-use-cases)
+17. [C3 Debugger](#17-c3-debugger)
+18. [Scripting (C3 Script / JavaScript)](#18-scripting-c3-script--javascript)
+19. [Feature Deep-Dive: How the Mesh Works](#19-feature-deep-dive-how-the-mesh-works)
+20. [Tips and Common Mistakes](#20-tips-and-common-mistakes)
 
 ## 1. Scenarios Where This Addon Excels
 
-- **Dynamic rope and cable rendering**: Build a line from live object points and update every tick for moving anchors.
-- **Laser and beam VFX**: Use UV scrolling plus distortion for animated energy beams without sprite tiling seams.
-- **Curved paths and trails**: Generate bezier, arc, and smoothed lines from simple parameters.
-- **Node graph and UI connectors**: Connect draggable UI nodes with clean line segments and color states.
-- **Water streams and conveyor visuals**: Use repeating textures and UV motion for directional flow effects.
-- **Lightning and magic arcs**: Combine object linking, subdivision, and distortion for reactive impact visuals.
+- **Ropes and cables between moving objects**: Connect two objects, or a whole picked list, and the line follows them every tick.
+- **Lasers and energy beams**: A Tiled Background with a glow image, a scrolling texture and a little distortion makes an animated beam with no seams.
+- **Rivers, roads and conveyor belts**: Tile a texture along a curved path at a fixed pixel density and scroll it to show flow.
+- **Node-graph and UI connectors**: Draw clean bezier links between draggable panels using the same object type for every link.
+- **Lightning and magic arcs**: Smooth a jagged path and animate the distortion wave for a living, crackling effect.
+- **3D wires and tapes**: Points carry a Z offset and the ribbon can face the camera or twist as a flat tape in 3D layouts.
+- **Anything a Sprite can do, on a line**: Because the host is a normal object, animations, effects, families, containers and collisions all keep working.
 
 ## 2. Core Concepts
 
 ### The problem this addon solves
 
-Without a mesh line system, developers often place many rotated sprites to fake a curved line. That adds object overhead, visible seams, and event complexity. **Line Renderer 2D** keeps one object per line and rebuilds a **mesh strip** from a **control point** list.
+Without a mesh line system you place many rotated sprites to fake a curve. That costs objects, shows seams at joins, and every visual tweak means touching every segment. Line Renderer keeps **one object per line** and rebuilds the host's mesh from a **control point** list, so the whole stroke is a single textured strip.
 
 ### Key design decisions
 
-- **One instance equals one line**: If you need multiple lines, create multiple instances.
-- **Point ownership stays in your events**: The plugin does not simulate rope physics by itself.
-- **Per-point width and color**: Width and tint interpolate between points for gradients and tapering.
-- **Safe index behavior**: Invalid point indices do not crash events.
-- **Automatic mesh rebuild strategy**: Rebuild happens when needed by settings or point changes.
+- **The host draws, the behavior shapes.** The behavior only writes mesh points. Image, color, opacity, blend mode, effects and Z order stay on the host object where Construct expects them.
+- **Points live in your events.** The behavior does not simulate rope physics. You decide where points go; it renders them.
+- **Relative space by default.** Points are object-local pixels, so a freshly added behavior renders the object across its own box and follows the object's position, angle and size.
+- **One behavior per object.** The behavior owns the mesh, so Construct allows only one Line Renderer per object.
+- **Safe indices.** Out-of-range point indices are ignored, never crash events.
 
 ### Key concepts at a glance
 
 | Concept | Meaning |
 |---|---|
-| **Control Point** | A point with x, y, width, and RGBA data used to build the line. |
-| **Mesh Strip** | The generated triangle geometry drawn by the plugin. |
-| **Stroke Image** | The object's own editable image, painted/imported like a Sprite and tiled along the line. |
-| **UV Scroll** | Texture movement along line length over time. |
-| **Distortion** | Vertex offset animation using amplitude, frequency, speed, and axis. |
-| **Color Filter** | Instance-wide tint and opacity applied on top of per-point colors. |
-| **Effects** | Construct shader effects stacked on the rendered stroke. |
-| **Coordinate Space** | Points interpreted as absolute world coordinates or relative local coordinates. |
-| **Render LOD** | Cap that reduces rendered point count for performance at distance. |
+| **Control point** | A point with x, y, z and a half-thickness `width`. The line passes through every point in order. |
+| **Host object** | The Sprite or Tiled Background the behavior is attached to. It provides the image and everything visual. |
+| **Mesh column** | One sample along the line, with a left and right vertex. The host mesh is columns x 2. |
+| **Co-ordinate space** | Relative (object-local pixels that follow the object) or Absolute (layout co-ordinates). |
+| **Distortion** | A sine wave offset applied along the line, animated over time. |
 
 ## 3. Project Setup
 
-1. Add **Line Renderer 2D** to your project as a world object.
-2. Drop one instance on a layer.
-3. Set `Initial point count` to at least `2`.
-4. Optional texture: **double-click the instance** (like a Sprite) to paint or import the object image, then set `Texture tile length` to control how often it repeats along the stroke. Leave the image blank to draw a solid line from per-point colors.
-5. In events, define points with actions like `SetPoint`, `AddPoint`, or `SetLine`.
-6. Tune distortion, caps, blend mode, and UV scroll. Optionally add Construct **effects** on the object and set the instance **color/opacity** in the Properties Bar.
+1. Install the addon (`salmanshh_line_renderer-2.0.0.0.c3addon`) through the Addon Manager and restart Construct.
+2. Add a **Tiled Background** to your layout. Paint or import the image you want along the line (a rope, a glow strip, a dashed pattern). For most lines a wide, short image works best: the image height maps across the ribbon, the image width repeats along it.
+3. Add the **Line Renderer** behavior to the object. The default properties render the object exactly across its own box, so nothing looks different until you edit points.
+4. Optionally use a **Sprite** instead. Sprites work the same way, except the image is always stretched once along the line (spritesheets cannot tile).
+5. Drive the points from events:
 
-Example first working setup:
+```
+Event: System -> On start of layout
+  Action: Rope: Set co-ordinate space -> Absolute
+  Action: Rope: Set line between objects -> Anchor, Hook
+  // two-point line between the first picked Anchor and Hook
 
-```text
-Event: On start of layout
-  Action: LineRenderer2D -> "Set line from ({0}, {1}) to ({2}, {3})", 200, 200, 600, 300
-  Action: LineRenderer2D -> "Set all widths to {0}", 18
-  Action: LineRenderer2D -> "Set all colors to ({0}, {1}, {2}) opacity {3}", 255, 240, 180, 100
-  Action: LineRenderer2D -> "Set UV scroll speed to {0}", 120
-  // creates a visible animated line immediately
+Event: System -> Every tick
+  Action: Rope: Set point to object -> 0, Anchor
+  Action: Rope: Set point to object -> 1, Hook
+  // keep both ends attached as the objects move
 ```
 
-## 4. Plugin Properties
+## 4. Behavior Properties
 
 | Property | Type | Default | Description |
-|---|---|---:|---|
-| Initial point count | Integer | 2 | Number of control points allocated at create time. |
-| Texture tile length | Float | 64 | World pixels per full texture repeat. |
-| UV scroll speed | Float | 0 | Texture movement speed along the stroke. |
-| Default width | Float | 16 | Initial point width value. |
-| Distort amplitude | Float | 0 | Pixel offset strength for distortion. |
-| Distort frequency | Float | 1 | Distortion wave density. |
-| Distort speed | Float | 1 | Distortion phase speed. |
-| Distort axis | Combo | both | Axis mode: x_only, y_only, both, perpendicular. |
-| End cap style | Combo | round | Endpoint style: round, flat, square. |
-| Blend mode | Combo | normal | Draw blending mode. |
-| Sampling mode | Combo | auto | Texture sampling mode: auto, nearest, linear. |
-| Debug points | Check | false | Draw control point markers. |
-| Editor preview | Combo | wireframe | Editor draw style: wireframe, solid, animated. |
+|---|---|---|---|
+| Initial point count | integer | 2 | Points created at start, spread across the object's box so it looks unchanged. |
+| Co-ordinate space | combo | Relative | Relative: object-local pixels that follow the object. Absolute: layout co-ordinates that ignore the object's transform. |
+| Texture scroll speed | float | 0 | Pixels per second the image scrolls along the line (Tiled Background only). |
+| End caps | combo | Round | None (cut at the endpoint), Square or Round ends; Square and Round extend by half the thickness. |
+| Joins | combo | Round | Simple, Miter, Bevel or Round corners between segments. |
+| Cross-section points | integer | 2 | 2 draws a flat ribbon; 3 to 32 wraps the image around a 3D tube. |
+| Facing | combo | Flat | Flat (2D), Billboard (face the 3D camera) or Up vector (3D tape). |
+| Distortion amplitude | float | 0 | Maximum pixel offset of the distortion wave. 0 disables distortion. |
+| Distortion frequency | float | 1 | Spatial frequency of the wave along the line. |
+| Distortion speed | float | 1 | How fast the wave phase advances. |
+| Distortion axis | combo | Both | X only, Y only, Both, Perpendicular or Z only. |
+| Distortion resolution | integer | 1 | Mesh subdivisions per segment. Raise it for smooth waves on long segments. |
+| Auto-fit to line | check | false | Absolute space only: move and resize the object so its box covers the line after every rebuild. |
+| Enabled | check | true | Whether the behavior is initially enabled. When disabled the object is drawn normally. |
 
-> **The stroke texture is the object's image, not a property.** Double-click the instance (or context-menu *Edit*) to open the image editor like a Sprite. The image **tiles** along the stroke (`Texture tile length`, `UV scroll speed`), respects the instance **color/opacity** filter shown in the Properties Bar, and supports Construct **effects** (Add effect on the object). Leave the image blank to draw a solid colored line from the per-point colors. The **Editor preview** now draws at the instance's real position, rotation, and size — including inside scene-graph parents — and shows the texture in *solid* / *animated* modes.
+The properties are read once when the instance is created. Everything they set can also be changed at runtime with the matching action.
 
-## 5. Managing Points and Shape Setup
+Several things are deliberately not properties because the host object already defines them: the **image** and its animation, the **texture mapping** (Tiled Backgrounds tile at their native density, Sprites stretch their frame once), the **line thickness** used by path-building actions (half the object's height at creation), and opacity, color, blend mode and effects.
 
-Use **Setup** and **Point Control** actions when you need direct ownership of point data.
+## 5. Managing Points
 
-```text
-Event: Every tick
-  Action: LineRenderer2D -> "Set point {0} to ({1}, {2}) width {3}", 0, Player.X, Player.Y, 20
-  Action: LineRenderer2D -> "Set point {0} to ({1}, {2}) width {3}", 1, Mouse.X, Mouse.Y, 8
-  // simple dynamic two-point beam between player and cursor
+A line is a list of at least two **control points**. Each point has an X and Y position, an optional Z offset and a **width**, which is the half-thickness of the ribbon at that point. Widths interpolate between points, so a line from width 16 to width 0 tapers to a tip.
+
 ```
+Event: System -> On start of layout
+  Action: Trail: Set point count -> 5
+  Action: Trail: Set point -> 0, 0, 0, 12
+  Action: Trail: Set point -> 1, 40, -10, 10
+  Action: Trail: Set point -> 2, 80, 0, 8
+  Action: Trail: Set point -> 3, 120, 10, 4
+  Action: Trail: Set point -> 4, 160, 0, 0
+  // widths taper from 12 to 0 for a comet tail
+```
+
+Add, insert and remove points change the count and fire **On point count changed**. Remove point refuses to go below two points. Set point count grows the list with points at (0, 0) or truncates it.
 
 Gotchas:
 
-- Keep at least 2 points for a visible line.
-- Use `IsPointIndexValid` before writing to dynamic indices.
+- Widths are half-thickness. A rope that should look 20 pixels wide uses width 10.
+- Two consecutive points at the same position produce a zero-length segment. The behavior tolerates it, but the tangent there is guessed from neighbours, so avoid it for clean caps.
 
 ## 6. Path Building and Object Linking
 
-Use **Path Building** actions to generate curves quickly and **Object Following** to pull data from picks.
+The path-building actions replace the whole point list in one go, using half the object's height (its height at creation) as the width of every point.
 
-```text
-Event: On start of layout
-  Action: LineRenderer2D -> "Build bezier from ({0}, {1}) via ({2}, {3}) and ({4}, {5}) to ({6}, {7}) with {8} segments", 100, 400, 250, 280, 450, 520, 700, 400, 20
-  Action: LineRenderer2D -> "Set all widths to {0}", 14
-  // generates a smooth S-curve path from parameters
+| Action | What it builds |
+|---|---|
+| Set line | Two points, a straight segment. |
+| Set line with Z elevation | Two points with Z offsets. |
+| Set arc | Points along a circle segment between two angles. |
+| Set bezier curve | Points sampled along a cubic bezier. |
+| Set line between objects | Two points at the first picked instance of each object. |
+| Set points from objects | One point per picked instance, in picking order. |
+| Smooth line | Replaces the list with a Catmull-Rom spline through the existing points. |
+
+```
+Event: Mouse -> On left button clicked
+  Action: Link: Set co-ordinate space -> Absolute
+  Action: Link: Set bezier curve -> NodeA.X, NodeA.Y, NodeA.X + 120, NodeA.Y, NodeB.X - 120, NodeB.Y, NodeB.X, NodeB.Y, 12
+  // an S-curve connector with 12 segments
 ```
 
-```text
-Event: Every tick
-  Action: LineRenderer2D -> "Connect {0} to {1}", Tower, Enemy
-  // two-point tracking line updated every frame
+**Set point to object** updates one existing point from an object and is the tool for following moving anchors every tick. **Set points from objects** rebuilds the list from a picked set, which is ideal for chains of physics segments: pick the chain links in order and the line passes through all of them.
+
+## 7. Coordinate Space and Auto-Fit
+
+**Relative** space (the default) treats point co-ordinates as pixels from the object's origin, before rotation and scale. Move, rotate or resize the object and the line follows, exactly like the image on a plain Tiled Background. Resizing scales the line by the ratio to the object's size at creation. This mode is the right one when the line is a fixed decoration of the object.
+
+**Absolute** space treats point co-ordinates as layout co-ordinates. The object's position, angle and size no longer move the line. This mode is the right one for ropes and connectors that attach to other objects.
+
+In absolute space the line usually extends far outside the host's small box. Construct still draws mesh points outside the box, but the object's bounding box, on-screen check and collision polygon are based on the box. Turn on **Auto-fit to line** (or call **Fit object to line**) and the behavior moves and resizes the object to cover the line after every rebuild, keeping culling and collisions correct.
+
+```
+Event: System -> On start of layout
+  Action: Rope: Set co-ordinate space -> Absolute
+  Action: Rope: Set auto-fit to line -> true
+  // the Rope object box now always covers the stroke
 ```
 
-Gotchas:
+Auto-fit is ignored in relative space, because in that mode the object's box is what defines the line.
 
-- `ConnectObjects` uses first picked instance of each object.
-- `SetPointsFromObjects` follows current pick order.
+## 8. Texture Mapping and Scrolling
 
-## 7. Coordinate Space and Transform Behavior
+There is nothing to configure here: texture mapping is derived from the host object, and the goal is that the default ribbon looks exactly like the un-bent object. Texture co-ordinates run along the distance of the line, and across the ribbon they cover the same image area the object's height would.
 
-`SetCoordSpace` controls whether points are interpreted in world space or local space relative to the line instance.
+**Tiled Background hosts tile.** The image repeats at its native density, one repeat per image width (times the host's **Image scale** property), no matter how long the line is. Change the tile density with the Tiled Background's own Image scale, and the line thickness with the object's height. Repeat wrapping keeps long ropes crisp and makes scrolling possible: **Texture scroll speed** moves the image along the line in pixels per second.
 
-```text
-Event: On start of layout
-  Action: LineRenderer2D -> "Set coordinate space to {0}", "relative"
-  Action: LineRenderer2D -> "Set line from ({0}, {1}) to ({2}, {3})", -100, 0, 100, 0
-  // line now rotates and scales with the object transform
+**Sprite hosts stretch.** A Sprite frame is one region of a spritesheet, so texture co-ordinates must stay inside it. The frame is fitted exactly once from start to end, and texture scrolling has no effect.
+
+```
+Event: System -> On start of layout
+  Action: Beam: Set texture scroll speed -> 200
+  // beam energy visibly flows from start to end (Beam is a Tiled Background)
 ```
 
-Scene graph / parent objects:
+## 9. Distortion, Caps and 3D Facing
 
-- In **relative** mode the stroke is built through the instance's live world transform, so when the Line Renderer is a **child** of another object (scene graph), it follows the parent's position, rotation, and scale automatically — both at runtime and in the editor preview.
-- In **absolute** mode points are literal world coordinates and ignore the instance transform, so a parented instance will not follow its parent. Use relative mode (or update points yourself) when you want parent-following.
+**Distortion** offsets every mesh sample by `amplitude * sin(frequency * distance + phase)`, where the phase advances by **Distortion speed** per second. **Distortion axis** picks the direction: X, Y, both, perpendicular to the line, or Z for 3D wobble. Raise **Distortion resolution** to add samples between control points; a wave with frequency 0.2 on a 400 pixel segment needs several subdivisions to look smooth.
 
-Gotchas:
-
-- In relative mode, object width and height affect transformed point spacing.
-- Use relative mode for reusable prefabs that move as one unit.
-
-## 8. Distortion and Appearance
-
-Distortion adds procedural movement. Appearance controls texture motion and blending.
-
-```text
-Event: Every tick
-  Action: LineRenderer2D -> "Set distortion amplitude {0} frequency {1} speed {2}", 10, 2.5, 1.2
-  Action: LineRenderer2D -> "Set UV scroll speed to {0}", 180
-  Action: LineRenderer2D -> "Set blend mode to {0}", "additive"
-  // creates flowing and glowing beam behavior
+```
+Event: System -> On start of layout
+  Action: Lightning: Set distortion -> 6, 0.35, 12
+  Action: Lightning: Set distortion axis -> Perpendicular
+  Action: Lightning: Set distortion resolution -> 6
 ```
 
-Texture, tiling, color, and effects:
+**End caps** controls both ends of the line:
 
-- The stroke samples the object's **image**. `Texture tile length` sets the world-space pixels per repeat; smaller values tile more often. `UV scroll speed` animates the texture along the line for flow/energy looks.
-- Tiling uses GPU repeat-wrap, so make the image **seamless left-to-right** to avoid visible seams between repeats.
-- The instance **color** and **opacity** (Properties Bar, or `Set opacity` action / `colorRgb` in script) tint the whole stroke on top of per-point colors.
-- Add Construct **effects** to the object as you would to a Sprite; they apply to the rendered stroke.
+| Cap | Look |
+|---|---|
+| None (flat) | The line is cut off exactly at the endpoint. |
+| Square | The line extends past the endpoint by half its thickness with a flat end. |
+| Round | The line extends past the endpoint by half its thickness with a rounded end (four extra mesh columns per end). |
 
-Gotchas:
+**Joins** controls the corners between segments:
 
-- High amplitude on thin lines can look noisy.
-- For clear art, match texture pattern direction with UV flow direction.
-- A blank object image draws a solid line from per-point colors — paint/import the image when you want a textured stroke.
+| Join | Look | Cost |
+|---|---|---|
+| Simple | One mesh column on the corner bisector at the nominal width, so sharp corners get thinner. Fine for dense point lists. | Cheapest. |
+| Miter | The corner column is stretched to the edges' intersection, giving a sharp point. Corners sharper than the miter limit (4x the half-width) fall back to Bevel so nothing shoots off to infinity. | Same as Simple. |
+| Bevel | The outer corner is chipped flat between the two segments' edges. | One extra column per corner. |
+| Round | The outer corner is swept in an arc. | Up to eight extra columns per corner, scaled by the turn angle. |
 
-## 9. Performance Controls
+For Bevel and Round the inner side of the corner shares a single vertex at the inner intersection, so translucent images do not double-draw at joins.
 
-Use LOD, distortion resolution, and culling to scale to many lines.
-
-```text
-Event: Every 0.25 seconds
-  Condition: Distance(LineRenderer2D.X, LineRenderer2D.Y, Camera.X, Camera.Y) > 2000
-  Action: LineRenderer2D -> "Set render LOD to {0}", 8
-  Action: LineRenderer2D -> "Set distort resolution to {0}", 1
-  Action: LineRenderer2D -> "Set frustum culling to {0}", true
-  // reduce geometric cost for distant lines
+```
+Event: System -> On start of layout
+  Action: Rope: Set end caps -> Round
+  Action: Rope: Set joins -> Round
 ```
 
-Gotchas:
+### Working in 3D
 
-- Very low LOD can flatten important curvature.
-- Increase distortion resolution only when ripple smoothness matters on screen.
+The behavior follows the same approach as the Trail Renderer: every vertex carries a real Z, the host object is treated as a canvas, and Construct draws the result with the host's Z elevation and 3D camera. Nothing changes for 2D projects; all Z values default to 0.
 
-## 10. Actions Reference
+**Point Z.** In Relative space a point's Z is an offset from the host's Z elevation, so the line rises and falls with the object. In Absolute space a point's Z is layout Z, exactly like its X and Y. Use **Set point Z elevation**, **Set point position with Z elevation**, **Add point with Z elevation** or **Set line with Z elevation**, or let the object-following actions read Z from other instances: **Set point to object**, **Set line between objects** and **Set points from objects** all take the target's total Z elevation and convert it into the current co-ordinate space.
+
+**Attach points.** **Set point to image point** reads a named image point (with its Z on r496 and later), or a face image point of a 3D Shape when you pick a face. **Set point to 3D model node** reads the world position of a mesh or bone node of a 3D Model object. Both feature-detect the runtime API and fall back to the instance position on older runtimes.
+
+**Facing** controls how the width is oriented. Flat keeps the ribbon in the layout plane, which is right for lines on the ground. Billboard turns the width toward the camera. Up vector makes a tape perpendicular to the world up axis that twists as the line climbs. **Set billboard camera** chooses the camera: Automatic finds the project's 3D Camera object (by name, or any object exposing a camera position), Manual takes an X, Y, Z you supply, for example from the 3D Camera's own expressions. **Set up vector** changes the up axis for Up vector facing.
+
+**Tubes.** **Cross-section points** turns the flat ribbon into a tube. With 2 points the line is a ribbon; with 3 or more, the image is wrapped around a tube with that many points around it (the mesh gets one extra row for the seam). Tubes look right from any camera angle, so they do not need billboard facing. Round caps become rounded ends, distortion moves the whole ring, and joins fall back to Simple because a ring needs a centre. Six to twelve points make a convincing cable.
+
+```
+Event: System -> On start of layout
+  Action: Cable: Set co-ordinate space -> Absolute
+  Action: Cable: Set auto-fit to line -> true
+  Action: Cable: Set cross-section points -> 8
+  Action: Cable: Set line with Z elevation -> PoleA.X, PoleA.Y, 200, PoleB.X, PoleB.Y, 260
+```
+
+**Auto-fit in 3D.** With auto-fit on (Absolute space), the host is resized to cover the line, its own Z elevation is lowered to the lowest vertex so Z sorting matches the line and all mesh offsets stay positive, and any 3D rotation on the host is cleared so mesh points are written in layout space. This mirrors the Trail Renderer's host handling. In Relative space the host keeps its rotation and the line rotates with it.
+
+## 10. Performance Controls
+
+- **Set maximum drawn points** caps how many control points feed the mesh. With 200 points and LOD 40, the mesh uses 40 evenly spread points. The behavior additionally caps the mesh at 1024 columns.
+- **Set distortion resolution** adds columns per segment. Keep it at 1 unless distortion needs it.
+- **Set off-screen culling** skips rebuilding while the line's bounds are outside the layer viewport. The last mesh stays on the host.
+- The mesh is only rebuilt when something changed: points, settings, the host transform (absolute space) or size (relative space), and every tick while distortion or scrolling is active.
+
+## 11. Actions Reference
 
 ### Setup
 
 | Action | Description |
 |---|---|
-| SetPointCount | Resize point array to target count and keep valid existing points. |
-| AddPoint | Append one point with x, y, width. |
-| InsertPoint | Insert one point at index and shift later points. |
-| RemovePoint | Remove one point at index when valid and safe. |
-| ClearPoints | Reset to a default minimal point setup. |
+| Set enabled | Turn line generation on or off. Off releases the mesh so the object shows its plain image. |
+| Set point count | Resize the point list, adding points at (0, 0) or truncating. |
+| Add point | Append a control point with a position and width. |
+| Add point with Z elevation | Append a control point with X, Y, Z and width. |
+| Insert point | Insert a control point at an index. |
+| Remove point | Remove the point at an index (never below two points). |
+| Clear points | Reset to two points at the origin. |
 
 ### Point Control
 
 | Action | Description |
 |---|---|
-| SetPoint | Set point x, y, and width in one call. |
-| SetPointXY | Set point position only. |
-| SetPointWidth | Set point width only. |
-| SetPointColor | Set per-point tint and opacity. |
-| SetAllWidths | Apply one width to all points. |
-| SetAllColors | Apply one color and opacity to all points. |
+| Set point | Set position and width of one point. |
+| Set point position | Set only the X and Y of one point. |
+| Set point position with Z elevation | Set X, Y and Z of one point. |
+| Set point Z elevation | Set the Z elevation of one point. |
+| Set point width | Set the half-thickness of one point. |
+| Set width of all points | Set every point's half-thickness. |
 
 ### Path Building
 
 | Action | Description |
 |---|---|
-| SetLine | Replace shape with a straight two-point line. |
-| BuildBezier | Build a sampled cubic bezier into control points. |
-| BuildArc | Build an arc path from center and angle range. |
-| SmoothPath | Re-sample current path with Catmull-Rom smoothing. |
-| ConnectObjects | Build a two-point line between first picked instances. |
+| Set line | Replace the list with a straight two-point line. |
+| Set line with Z elevation | Replace the list with a straight line in 3D. |
+| Set arc | Replace the list with an arc of N segments. |
+| Set bezier curve | Replace the list with a sampled cubic bezier. |
+| Set line between objects | Replace the list with a line between two picked objects. |
+| Smooth line | Replace the list with a Catmull-Rom spline through the current points. |
 
 ### Object Following
 
 | Action | Description |
 |---|---|
-| SetPointToObject | Write one point position from an object pick. |
-| SetPointsFromObjects | Rebuild all points from picked instances. |
+| Set point to object | Move one point to the first picked instance of an object (X, Y and Z), in the current co-ordinate space. |
+| Set point to image point | Move one point to an image point (or 3D Shape face image point) of an instance, with Z. |
+| Set point to 3D model node | Move one point to a mesh or bone node of a 3D Model instance. |
+| Set points from objects | Rebuild the list with one point per picked instance (X, Y and Z). |
 
 ### Coordinate Space
 
 | Action | Description |
 |---|---|
-| SetCoordSpace | Switch between absolute and relative point space. |
+| Set co-ordinate space | Switch between Absolute (layout) and Relative (object) point co-ordinates. |
+| Set auto-fit to line | Enable or disable fitting the object's box to the line after each rebuild (absolute space). |
+| Fit object to line | Fit the object's box to the line once, now. |
 
 ### Distortion
 
 | Action | Description |
 |---|---|
-| SetDistortion | Set amplitude, frequency, and speed together. |
-| SetDistortAmplitude | Set distortion strength only. |
-| SetDistortFrequency | Set distortion frequency only. |
-| SetDistortSpeed | Set distortion animation speed only. |
-| SetDistortAxis | Set distortion axis mode. |
+| Set distortion | Set amplitude, frequency and speed together. |
+| Set distortion amplitude | Set the wave's maximum pixel offset. |
+| Set distortion frequency | Set the wave's spatial frequency. |
+| Set distortion speed | Set how fast the wave animates. |
+| Set distortion axis | Choose the offset direction. |
 
 ### Appearance
 
 | Action | Description |
 |---|---|
-| SetUVScrollSpeed | Set UV movement speed. |
-| SetTextureTileLength | Set world length of one texture repeat. |
-| SetBlendMode | Set blend mode for drawing. |
-| SetEndCapStyle | Set endpoint geometry style. |
-| SetOpacity | Set line master opacity. |
+| Set end caps | Round, None or Square line ends. |
+| Set joins | Simple, Miter, Bevel or Round corners. |
+| Set cross-section points | 2 for a ribbon, 3 to 32 for a tube. |
+| Set billboard camera | Automatic (3D Camera object) or a manual X, Y, Z for Billboard facing. |
+| Set up vector | World up direction for Up vector facing. |
+| Set facing | Flat, Billboard or Up vector orientation in 3D. |
+| Set texture scroll speed | Image scroll speed along the line in pixels per second. |
 
 ### Performance
 
 | Action | Description |
 |---|---|
-| SetRenderLOD | Cap rendered point count for lower cost. |
-| SetDistortResolution | Set subdivisions used by distortion pass. |
-| SetFrustumCulling | Skip drawing when line bounds are off-screen. |
+| Set maximum drawn points | Limit how many points are used to draw the line (0 = all). |
+| Set distortion resolution | Mesh subdivisions per segment. |
+| Set off-screen culling | Skip rebuilds while the line is off-screen. |
 
-## 11. Conditions Reference
+## 12. Conditions Reference
 
 | Condition | Description |
 |---|---|
-| OnMeshRebuilt | Trigger when a mesh rebuild happened this tick. |
-| OnPointCountChanged | Trigger when point count changed. |
-| IsPointIndexValid | True when index references an existing point. |
-| IsDistortionActive | True when distortion amplitude is greater than zero. |
-| IsUVScrolling | True when UV scroll speed is non-zero. |
-| IsTextureAssigned | True when the object image has pixels (a stroke texture is present). |
-| HasMinimumPoints | True when point count is at least a threshold. |
-| IsCulled | True when line was culled on last tick. |
-| IsLODActive | True when LOD cap is actively reducing rendered points. |
-| IsRelativeSpace | True when coordinate space is relative. |
+| Is enabled | True while the line is generated on the object. |
+| Compare point count | Compare the number of points in the line. |
+| Point exists | True if an index refers to an existing point. |
+| Compare co-ordinate space | True if the line uses the given co-ordinate space. |
+| Is distorting | True if distort amplitude is above zero. |
+| Is texture scrolling | True if Texture scroll speed is not zero. |
+| Is limiting drawn points | True if the maximum drawn points setting is reducing the number of points drawn. |
+| Is culled off-screen | True if off-screen culling skipped the last update. |
 
-## 12. Expressions Reference
+## 13. Expressions Reference
 
 | Expression | Returns | Description |
 |---|---|---|
-| PointCount | number | Total control points. |
-| GetPointX(index) | number | Point world X for index. |
-| GetPointY(index) | number | Point world Y for index. |
-| GetPointWidth(index) | number | Point width for index. |
-| GetPointR(index) | number | Point red channel in 0-255 range. |
-| GetPointG(index) | number | Point green channel in 0-255 range. |
-| GetPointB(index) | number | Point blue channel in 0-255 range. |
-| GetPointOpacity(index) | number | Point opacity in 0-100 range. |
-| LineLength | number | Last built polyline length. |
-| VertexCount | number | Last built mesh vertex count. |
-| RenderedPointCount | number | Points used in last mesh build after LOD. |
-| RenderLOD | number | Active LOD cap, 0 means off. |
-| DistortResolution | number | Distortion subdivision count. |
+| PointCount | number | Number of control points. |
+| GetPointX(index) | number | Layout X of a point (after the object transform in relative space). |
+| GetPointY(index) | number | Layout Y of a point. |
+| GetPointZ(index) | number | Layout Z of a point (host elevation plus offset in Relative space; the point's own Z in Absolute space). |
+| GetPointWidth(index) | number | Half-thickness of a point. |
+| LineLength | number | Length of the rendered polyline. |
+| VertexCount | number | Mesh vertices in the last rebuild (2 per column). |
+| RenderedPointCount | number | Points used to draw the line after the maximum drawn points limit. |
+| RenderLOD | number | Current LOD cap (0 = off). |
+| DistortResolution | number | Current subdivisions per segment. |
 | DistortAmplitude | number | Current distortion amplitude. |
 | DistortFrequency | number | Current distortion frequency. |
 | DistortSpeed | number | Current distortion speed. |
-| UVScrollSpeed | number | Current UV scroll speed. |
-| UVScrollOffset | number | Accumulated UV offset. |
-| TextureTileLength | number | Current tile length. |
-| CoordSpace | string | Current coordinate space key. |
+| UVScrollSpeed | number | Current scroll speed. |
+| UVScrollOffset | number | Accumulated scroll distance in pixels. |
+| CoordSpace | string | "absolute" or "relative". |
+| EndCapStyle | string | "round", "flat" or "square". |
+| JoinStyle | string | "simple", "miter", "bevel" or "round". |
+| CrossSection | number | Cross-section point count (2 = ribbon). |
 
-## 13. Triggers Reference
+## 14. Triggers Reference
 
 | Trigger | Description |
 |---|---|
-| OnMeshRebuilt | Fired when mesh data was rebuilt on that tick. |
-| OnPointCountChanged | Fired when number of control points changes. |
+| On line updated | Triggered after the line's mesh has been updated (after events, before drawing). |
+| On point count changed | Fires when a point is added, inserted, removed or the count is set. |
 
-## 14. System Use Cases
+## 15. System Use Cases
 
-### Point Data System
+### Point list
 
-One-line summary: Creates and updates point records that define shape, width, and tint.
+Owns the control points and their widths.
 
-Use case 1:
+**Scenario:** Taper a trail so it fades to a tip.
 
-Scenario: Initialize a predictable line with four points for a guided projectile path.
-
-```text
-Event: On start of layout
-  Action: LineRenderer2D -> "Set point count to {0}", 4
-  Action: LineRenderer2D -> "Set point {0} to ({1}, {2}) width {3}", 0, 100, 300, 18
-  Action: LineRenderer2D -> "Set point {0} to ({1}, {2}) width {3}", 1, 260, 260, 14
-  Action: LineRenderer2D -> "Set point {0} to ({1}, {2}) width {3}", 2, 420, 320, 12
-  Action: LineRenderer2D -> "Set point {0} to ({1}, {2}) width {3}", 3, 580, 300, 10
+```
+Event: System -> On start of layout
+  Action: Trail: Set point count -> 8
+Event: System -> For "i" from 0 to 7
+  Action: Trail: Set point -> loopindex, loopindex * 24, 0, 10 - loopindex * 1.4
 ```
 
-Use case 2:
+**Scenario:** React to the count changing.
 
-Scenario: Pulse point widths for a heartbeat visual while preserving shape.
-
-```text
-Event: Every tick
-  Action: LineRenderer2D -> "Set point width {0} to {1}", 0, 12 + sine(time * 2) * 4
-  Action: LineRenderer2D -> "Set point width {0} to {1}", 1, 10 + sine(time * 2 + 0.4) * 3
-  Action: LineRenderer2D -> "Set point width {0} to {1}", 2, 8 + sine(time * 2 + 0.8) * 2
+```
+Event: Trail -> On point count changed
+  Action: Text: Set text -> "Points: " & Trail.LineRenderer.PointCount
 ```
 
-Tip: width-only updates are cheaper to reason about than rewriting full point structs.
+### Object following
 
-### Path Generator System
+Keeps points attached to instances.
 
-One-line summary: Converts high-level shapes into point sets quickly.
+**Scenario:** A rope between two physics objects.
 
-Use case 1:
-
-Scenario: Create an aiming arc preview from player to target zone.
-
-```text
-Event: While aiming
-  Action: LineRenderer2D -> "Build arc at ({0}, {1}) radius {2} from {3} to {4} with {5} segments", Player.X, Player.Y, 180, -40, 40, 16
+```
+Event: System -> Every tick
+  Action: Rope: Set point to object -> 0, Ball
+  Action: Rope: Set point to object -> 1, Peg
 ```
 
-Use case 2:
+**Scenario:** A chain through many links.
 
-Scenario: Smooth a hand-authored path after waypoint edits.
-
-```text
-Event: On button "Smooth" clicked
-  Action: LineRenderer2D -> "Smooth path with {0} subdivisions", 5
+```
+Event: System -> Every tick
+  Condition: System -> Pick ChainLink by evaluate ChainLink.Order >= 0
+  Action: Chain: Set points from objects -> ChainLink
+  // picking order defines point order; sort the picks first if needed
 ```
 
-Tip: smooth only when path changes, not every tick.
+### Co-ordinate space and fit
 
-### Linking System
+Chooses where points live and keeps the object's box in step.
 
-One-line summary: Binds line endpoints or full point sets to picked objects.
+**Scenario:** Absolute rope with correct collisions.
 
-Use case 1:
-
-Scenario: Draw line from selected unit to hovered enemy.
-
-```text
-Event: Every tick
-  Condition: Unit is selected
-  Condition: Enemy is hovered
-  Action: LineRenderer2D -> "Connect {0} to {1}", Unit, Enemy
+```
+Event: System -> On start of layout
+  Action: Rope: Set co-ordinate space -> Absolute
+  Action: Rope: Set auto-fit to line -> true
+Event: Player -> Is overlapping Rope
+  Action: Player: Set animation -> "Climb"
 ```
 
-Use case 2:
+The host's collision polygon is deformed by the mesh, so overlap checks follow the line.
 
-Scenario: Build a route line through picked waypoint instances.
+### Texture and animation
 
-```text
-Event: On route updated
-  Action: LineRenderer2D -> "Set points from objects {0}", Waypoint
+Maps the host image along the line and animates it.
+
+**Scenario:** A flowing river.
+
+```
+Event: System -> On start of layout
+  Action: River: Set texture scroll speed -> -60
+  Action: River: Set distortion -> 3, 0.05, 2
 ```
 
-Tip: pick order matters when converting objects to points.
+## 16. Game Use Cases
 
-### Visual Motion System
+### 1. Simplest rope
 
-One-line summary: Animates line appearance with UV and distortion controls.
+**Scenario:** A rope hangs between two pegs.
 
-Use case 1:
-
-Scenario: Turn static line into animated electric beam.
-
-```text
-Event: On beam enabled
-  Action: LineRenderer2D -> "Set UV scroll speed to {0}", 260
-  Action: LineRenderer2D -> "Set distortion amplitude {0} frequency {1} speed {2}", 14, 3.2, 1.6
-  Action: LineRenderer2D -> "Set distort axis to {0}", "perpendicular"
+```
+Event: System -> On start of layout
+  Action: Rope: Set co-ordinate space -> Absolute
+  Action: Rope: Set line between objects -> PegA, PegB
 ```
 
-Use case 2:
+### 2. Grappling hook
 
-Scenario: Calm beam down after overload phase.
+**Scenario:** A line from the player to the hook point while grappling.
 
-```text
-Event: On overload ended
-  Action: LineRenderer2D -> "Set distortion amplitude {0}", 2
-  Action: LineRenderer2D -> "Set UV scroll speed to {0}", 80
+```
+Event: Player -> Is grappling
+  Action: Grapple: Set enabled -> Enabled
+  Action: Grapple: Set point to object -> 0, Player
+  Action: Grapple: Set point to object -> 1, Hook
+Event: Player -> Is grappling (inverted)
+  Action: Grapple: Set enabled -> Disabled
 ```
 
-Tip: axis changes can do more for style than larger amplitude values.
+Disabling releases the mesh, so the Grapple object shows nothing odd while idle. Set its opacity to 0 in the editor and to 100 when enabled if you prefer it fully hidden.
 
-### Runtime Cost System
+### 3. Laser beam with impact
 
-One-line summary: Reduces mesh complexity and updates when quality can be lowered.
+**Scenario:** A beam from a turret to the first hit point of a raycast.
 
-Use case 1:
-
-Scenario: Auto-adjust quality from camera distance.
-
-```text
-Event: Every 0.2 seconds
-  Condition: distance(LineRenderer2D.X, LineRenderer2D.Y, Camera.X, Camera.Y) > 1500
-  Action: LineRenderer2D -> "Set render LOD to {0}", 6
-  Action: LineRenderer2D -> "Set frustum culling to {0}", true
+```
+Event: Turret -> Every tick
+  Action: Turret: LineOfSight: Cast ray -> Turret.X, Turret.Y, Turret.X + cos(Turret.Angle) * 2000, Turret.Y + sin(Turret.Angle) * 2000
+  Action: Beam: Set line -> Turret.X, Turret.Y, Turret.LineOfSight.HitX, Turret.LineOfSight.HitY
+  Action: Beam: Set texture scroll speed -> 400
 ```
 
-Use case 2:
+### 4. Bouncing laser
 
-Scenario: Restore quality when line is close to camera.
+**Scenario:** A beam that reflects off mirrors.
 
-```text
-Event: Every 0.2 seconds
-  Condition: distance(LineRenderer2D.X, LineRenderer2D.Y, Camera.X, Camera.Y) <= 1500
-  Action: LineRenderer2D -> "Set render LOD to {0}", 0
-  Action: LineRenderer2D -> "Set distort resolution to {0}", 2
+```
+Event: System -> Every tick
+  Action: Beam: Clear points
+  Action: Beam: Set point -> 0, Emitter.X, Emitter.Y, 4
+  Action: Beam: Set point -> 1, Reflect1.X, Reflect1.Y, 4
+  Action: Beam: Add point -> Reflect2.X, Reflect2.Y, 4
+  Action: Beam: Add point -> Target.X, Target.Y, 4
 ```
 
-Tip: for fast games, evaluate distance less often than every tick.
+### 5. Lightning strike
 
-### Save and Restore System
+**Scenario:** A jagged bolt from cloud to ground that crackles for half a second.
 
-One-line summary: Preserves line state through save/load using plugin runtime serialization.
-
-Use case 1:
-
-Scenario: Save puzzle cable state and restore exactly after load.
-
-```text
-Event: On save requested
-  Action: System -> "Save game to slot", "slotA"
-
-Event: On load requested
-  Action: System -> "Load game from slot", "slotA"
+```
+Event: Cloud -> On strike
+  Action: Bolt: Set line -> Cloud.X, Cloud.Y, Ground.X, Ground.Y
+  Action: Bolt: Set distortion -> 14, 0.3, 40
+  Action: Bolt: Set distortion axis -> Perpendicular
+  Action: Bolt: Set distortion resolution -> 10
+  Action: System: Wait -> 0.5
+  Action: Bolt: Set enabled -> Disabled
 ```
 
-Use case 2:
+### 6. Comet tail
 
-Scenario: Confirm loaded line integrity by reading value expressions.
+**Scenario:** A trail of recent positions behind a comet.
 
-```text
-Event: On game loaded
-  Action: Text -> "Set text", "Points: " & LineRenderer2D.PointCount & " Length: " & LineRenderer2D.LineLength
+```
+Event: System -> Every tick
+  Action: Tail: Insert point -> 0, Comet.X, Comet.Y, 10
+  Condition: Tail.LineRenderer.PointCount > 20
+  Action: Tail: Remove point -> 20
+Event: System -> Every tick
+  Action: Tail: Set width of all points -> 10
 ```
 
-Tip: after load, your event logic can still overwrite values on first tick, so gate init events.
+Widths reset each tick; for a taper, loop over the points and set width by index.
 
-## 15. Game Use Cases
+### 7. River with flow
 
-### 1. Minimal Two-Point Beam
+**Scenario:** A winding river built from a bezier.
 
-Scenario: Draw a simple beam between player and mouse cursor.
-
-```text
-Layer structure:
-  Gameplay
-    Player
-    LineRenderer2D
+```
+Event: System -> On start of layout
+  Action: River: Set co-ordinate space -> Absolute
+  Action: River: Set bezier curve -> 0, 300, 400, 100, 800, 500, 1200, 300, 24
+  Action: River: Set width of all points -> 40
+  Action: River: Set texture scroll speed -> -50
 ```
 
-```text
-Event: Every tick
-  Action: LineRenderer2D -> "Set point count to {0}", 2
-  Action: LineRenderer2D -> "Set point {0} to ({1}, {2}) width {3}", 0, Player.X, Player.Y, 18
-  Action: LineRenderer2D -> "Set point {0} to ({1}, {2}) width {3}", 1, Mouse.X, Mouse.Y, 8
+### 8. Conveyor belt
+
+**Scenario:** A belt that moves boxes and scrolls its texture at the same speed.
+
+```
+Event: System -> On start of layout
+  Action: Belt: Set texture scroll speed -> 120
+Event: Box -> Is overlapping Belt
+  Action: Box: Set X -> Box.X + 120 * dt
 ```
 
-Note: keep this as your first smoke test when integrating the addon.
+Relative space is fine here: the belt is a fixed decoration of its own object.
 
-### 2. Boss Charge Laser
+### 9. Node graph connectors
 
-Scenario: Increase width and glow before firing.
+**Scenario:** Draggable nodes stay linked by curves.
 
-```text
-Layer structure:
-  Gameplay
-    Boss
-    FX
-      LineRenderer2D
+```
+Event: System -> Every tick
+  Condition: Link -> Pick by UID Link.SourceUID (via family / instance variables)
+  Action: Link: Set bezier curve -> From.X, From.Y, From.X + 100, From.Y, To.X - 100, To.Y, To.X, To.Y, 16
 ```
 
-```text
-Event: BossState = "Charging"
-  Action: LineRenderer2D -> "Connect {0} to {1}", Boss, Player
-  Action: LineRenderer2D -> "Set all widths to {0}", lerp(6, 30, ChargeProgress)
-  Action: LineRenderer2D -> "Set blend mode to {0}", "additive"
+### 10. Skill tree lines
+
+**Scenario:** Lines light up as skills unlock.
+
+```
+Event: Skill -> On unlocked
+  Action: TreeLine: Set enabled -> Enabled
+  Action: TreeLine: Set animation -> "Lit"
 ```
 
-Note: combine with camera shake only after full charge for impact.
+The host is a Sprite here, so its animation changes the line's look without touching the behavior.
 
-### 3. Moving Rope Between Hooks
+### 11. Tether health bar
 
-Scenario: Keep rope connected between two moving platforms.
+**Scenario:** A bar whose width shrinks with health.
 
-```text
-Event: Every tick
-  Action: LineRenderer2D -> "Connect {0} to {1}", HookA, HookB
-  Action: LineRenderer2D -> "Set all widths to {0}", 10
+```
+Event: System -> Every tick
+  Action: Bar: Set line -> 0, 0, 200 * (Player.Health / 100), 0
 ```
 
-Note: for sag, insert intermediate points and offset their Y values.
+Relative space keeps the bar attached to the object even if it moves.
 
-### 4. Curved Projectile Preview
+### 12. Fishing line with sag
 
-Scenario: Show predicted arc while player aims.
+**Scenario:** A line from the rod tip to the bobber with a gravity dip.
 
-```text
-Event: While aiming
-  Action: LineRenderer2D -> "Build bezier from ({0}, {1}) via ({2}, {3}) and ({4}, {5}) to ({6}, {7}) with {8} segments", Player.X, Player.Y, Player.X+120, Player.Y-80, Mouse.X-120, Mouse.Y-80, Mouse.X, Mouse.Y, 18
+```
+Event: System -> Every tick
+  Action: Line: Set bezier curve -> Rod.X, Rod.Y, Rod.X, Rod.Y + 80, Bobber.X, Bobber.Y + 80, Bobber.X, Bobber.Y, 10
 ```
 
-Note: run this only while aiming UI is active.
+### 13. Physics chain
 
-### 5. Lightning Strike Effect
+**Scenario:** Physics segments rendered as one rope image.
 
-Scenario: Spawn a temporary arc from caster to target.
-
-```text
-Event: On spell cast
-  Action: LineRenderer2D -> "Connect {0} to {1}", Caster, Target
-  Action: LineRenderer2D -> "Set distortion amplitude {0} frequency {1} speed {2}", 20, 4, 2
-  Action: LineRenderer2D -> "Set blend mode to {0}", "additive"
+```
+Event: System -> Every tick
+  Action: Rope: Set points from objects -> ChainLink
+  Action: Rope: Set width of all points -> 6
 ```
 
-Note: destroy instance after short timer for burst style.
+Create ChainLink instances in order so their picking order matches the chain.
 
-### 6. Rail Path for Grind Mechanic
+### 14. Radar sweep arc
 
-Scenario: Build and smooth a static rail path on start.
+**Scenario:** An arc that spins around a radar dish.
 
-```text
-Event: On start of layout
-  Action: LineRenderer2D -> "Set points from objects {0}", RailNode
-  Action: LineRenderer2D -> "Smooth path with {0} subdivisions", 4
-  Action: LineRenderer2D -> "Set all widths to {0}", 12
+```
+Event: System -> Every tick
+  Action: Sweep: Set arc -> Radar.X, Radar.Y, 160, Radar.Angle - 20, Radar.Angle, 8
+  Action: Sweep: Set end caps -> Flat
 ```
 
-Note: lock node pick order to maintain path direction.
+### 15. Pulse along a wire
 
-### 7. River Flow
+**Scenario:** A dashed image scrolls to show a signal travelling.
 
-Scenario: Build waterline visual with UV motion.
-
-```text
-Event: On start of layout
-  Action: LineRenderer2D -> "Set points from objects {0}", RiverNode
-  Action: LineRenderer2D -> "Set texture tile length to {0}", 96
-  Action: LineRenderer2D -> "Set UV scroll speed to {0}", 70
+```
+Event: Switch -> On pressed
+  Action: Wire: Set texture scroll speed -> 300
+  Action: System: Wait -> 1
+  Action: Wire: Set texture scroll speed -> 0
 ```
 
-Note: use low distortion for calm water and higher near rapids.
+### 16. Tentacle
 
-### 8. Data Cable UI Link
+**Scenario:** A tentacle that waves and tapers.
 
-Scenario: Connect two UI panels with a glowing link.
-
-```text
-Layer structure:
-  UI
-    PanelA
-    PanelB
-    LineRenderer2D
+```
+Event: System -> On start of layout
+  Action: Tentacle: Set point count -> 10
+  Action: Tentacle: Set distortion -> 12, 0.08, 3
+  Action: Tentacle: Set distortion axis -> Perpendicular
+  Action: Tentacle: Set distortion resolution -> 4
+Event: System -> For "i" from 0 to 9
+  Action: Tentacle: Set point -> loopindex, loopindex * 30, 0, 18 - loopindex * 1.8
 ```
 
-```text
-Event: Every tick
-  Action: LineRenderer2D -> "Connect {0} to {1}", PanelA, PanelB
-  Action: LineRenderer2D -> "Set all widths to {0}", 4
-  Action: LineRenderer2D -> "Set all colors to ({0}, {1}, {2}) opacity {3}", 90, 220, 255, 100
+### 17. Level-of-detail on long trails
+
+**Scenario:** Many trails on screen at once.
+
+```
+Event: System -> On start of layout
+  Condition: System -> Compare two values: TrailCount > 50
+  Action: Trail: Set maximum drawn points -> 16
+  Action: Trail: Set off-screen culling -> true
 ```
 
-Note: keep line on a dedicated UI FX layer for sorting clarity.
+### 18. Save and load
 
-### 9. Grapple Rope
+**Scenario:** Ropes survive a savegame.
 
-Scenario: Draw rope from player to grapple point.
-
-```text
-Event: GrappleActive
-  Action: LineRenderer2D -> "Connect {0} to {1}", Player, GrappleAnchor
-  Action: LineRenderer2D -> "Set end cap style to {0}", "round"
+```
+Event: Keyboard -> On F5 pressed
+  Action: System: Save game -> "slot1"
+Event: Keyboard -> On F9 pressed
+  Action: System: Load game -> "slot1"
 ```
 
-Note: switch to flat cap for mechanical cable visuals.
+Points, settings and scroll state are saved with the behavior and the mesh is rebuilt after loading. No extra events are needed.
 
-### 10. Multi-Segment Snake Trail
+### 19. Cleanup on layout end
 
-Scenario: Trail follows historical positions sampled over time.
+**Scenario:** A beam object is destroyed when its owner dies.
 
-```text
-Event: Every 0.05 seconds
-  Action: Push Player.X, Player.Y into arrays
-
-Event: Every tick
-  Action: LineRenderer2D -> "Set point count to {0}", TrailCount
-  Action: Repeat TrailCount times
-    Action: LineRenderer2D -> "Set point {0} to ({1}, {2}) width {3}", loopindex, TrailX[loopindex], TrailY[loopindex], lerp(18, 2, loopindex / max(1, TrailCount-1))
+```
+Event: Turret -> On destroyed
+  Action: Beam: Destroy
 ```
 
-Note: cap array size to avoid unbounded cost.
+Destroying the host releases the mesh with it. Nothing else to clean up.
 
-### 11. Shield Ring Segment
+### 20. 3D wire between towers
 
-Scenario: Render an arc segment for directional shield state.
+**Scenario:** A cable that climbs between two towers in a 3D layout.
 
-```text
-Event: Every tick
-  Action: LineRenderer2D -> "Build arc at ({0}, {1}) radius {2} from {3} to {4} with {5} segments", Player.X, Player.Y, 72, ShieldStartAngle, ShieldEndAngle, 20
+```
+Event: System -> On start of layout
+  Action: Cable: Set co-ordinate space -> Absolute
+  Action: Cable: Set line with Z elevation -> TowerA.X, TowerA.Y, 120, TowerB.X, TowerB.Y, 200
+  Action: Cable: Set facing -> Billboard
 ```
 
-Note: animate arc angles for rotating barrier effects.
+### 21. Combined: animated magic tether with collisions
 
-### 12. Route Planner Preview
+**Scenario:** A glowing tether that damages enemies touching it.
 
-Scenario: Show route through selected waypoints before confirming move.
-
-```text
-Event: On route edit
-  Action: LineRenderer2D -> "Set points from objects {0}", SelectedWaypoint
-  Action: LineRenderer2D -> "Set all colors to ({0}, {1}, {2}) opacity {3}", 255, 210, 90, 85
+```
+Event: System -> Every tick
+  Action: Tether: Set point to object -> 0, Mage
+  Action: Tether: Set point to object -> 1, Orb
+  Action: Tether: Set auto-fit to line -> true
+Event: System -> On start of layout
+  Action: Tether: Set co-ordinate space -> Absolute
+  Action: Tether: Set distortion -> 5, 0.2, 8
+  Action: Tether: Set texture scroll speed -> 150
+Event: Enemy -> Is overlapping Tether
+  Action: Enemy: Subtract from Health -> 10 * dt
 ```
 
-Note: color-code route validity by swapping tint instantly.
-
-### 13. Heat Beam Cooling State
-
-Scenario: Beam slows and dims while cooling down.
-
-```text
-Event: BeamState = "Cooldown"
-  Action: LineRenderer2D -> "Set UV scroll speed to {0}", lerp(220, 20, CooldownProgress)
-  Action: LineRenderer2D -> "Set opacity to {0}", lerp(100, 30, CooldownProgress)
-  Action: LineRenderer2D -> "Set distortion amplitude {0}", lerp(16, 0, CooldownProgress)
-```
-
-Note: this creates readable combat state feedback.
-
-### 14. Camera-Distance LOD Swap
-
-Scenario: Lower detail for lines far from camera.
-
-```text
-Event: Every 0.2 seconds
-  Condition: distance(LineRenderer2D.X, LineRenderer2D.Y, Camera.X, Camera.Y) > 1200
-  Action: LineRenderer2D -> "Set render LOD to {0}", 10
-
-Event: Every 0.2 seconds
-  Condition: distance(LineRenderer2D.X, LineRenderer2D.Y, Camera.X, Camera.Y) <= 1200
-  Action: LineRenderer2D -> "Set render LOD to {0}", 0
-```
-
-Note: pair with culling to reduce off-screen load further.
-
-### 15. Triggered Mesh Analytics
-
-Scenario: Log mesh stats each time geometry rebuilds.
-
-```text
-Event: LineRenderer2D -> On mesh rebuilt
-  Action: DebugText -> "Set text", "Pts: " & LineRenderer2D.PointCount & " Vert: " & LineRenderer2D.VertexCount & " Len: " & LineRenderer2D.LineLength
-```
-
-Note: useful while tuning path resolution and distortion settings.
-
-### 16. Relative Space Weapon Slash Prefab
-
-Scenario: Use relative points so slash line follows rotating weapon object.
-
-```text
-Event: On prefab created
-  Action: LineRenderer2D -> "Set coordinate space to {0}", "relative"
-  Action: LineRenderer2D -> "Set line from ({0}, {1}) to ({2}, {3})", -80, 0, 80, 0
-```
-
-Note: animate host object transform instead of rewriting points every frame.
-
-### 17. Timeline-Cutscene Link
-
-Scenario: Connect characters during dialog with smooth bezier line.
-
-```text
-Event: During cutscene
-  Action: LineRenderer2D -> "Build bezier from ({0}, {1}) via ({2}, {3}) and ({4}, {5}) to ({6}, {7}) with {8} segments", ActorA.X, ActorA.Y-20, Camera.X-120, Camera.Y-140, Camera.X+120, Camera.Y-140, ActorB.X, ActorB.Y-20, 14
-```
-
-Note: keep blend mode normal for cinematic readability.
-
-### 18. Electricity Network Visualization
-
-Scenario: Draw many node links and show overload links in red.
-
-```text
-Event: For each PowerLink
-  Action: LinkLine -> "Connect {0} to {1}", LinkSource, LinkTarget
-  Action: LinkLine -> "Set all colors to ({0}, {1}, {2}) opacity {3}", choose(IsOverloaded, 255, 120), choose(IsOverloaded, 80, 220), 120, 100
-```
-
-Note: map one plugin instance per network edge for independent styling.
-
-### 19. Puzzle Wire Rewiring
-
-Scenario: Player drags wire endpoint and line updates live.
-
-```text
-Event: While dragging wire
-  Action: LineRenderer2D -> "Set point {0} to ({1}, {2}) width {3}", 0, SocketA.X, SocketA.Y, 9
-  Action: LineRenderer2D -> "Set point {0} to ({1}, {2}) width {3}", 1, Mouse.X, Mouse.Y, 9
-```
-
-Note: confirm placement then snap point 1 to target socket.
-
-### 20. Edge Case Cleanup on Destroy
-
-Scenario: Ensure temporary line does not survive effect owner destruction.
-
-```text
-Event: On Enemy destroyed
-  Action: TempBeam -> Destroy
-```
-
-Note: always destroy transient line instances to avoid stale world objects.
-
-### 21. Persistence Validation Case
-
-Scenario: Verify save/load restores point count and style.
-
-```text
-Event: On game loaded
-  Action: DebugText -> "Set text", "Loaded points=" & LineRenderer2D.PointCount & " UV=" & LineRenderer2D.UVScrollSpeed & " LOD=" & LineRenderer2D.RenderLOD
-```
-
-Note: this catches accidental post-load reset logic in your own events.
+Auto-fit keeps the Tether's collision polygon aligned with the visible line.
 
 ### Other game use cases
 
-**Platformer:** Use ropes, ziplines, and moving hazard beams that react to level motion and switches.
+**Platformers** use it for grappling hooks, zip lines and swinging ropes that follow physics anchors.
+**Shoot 'em ups** render lasers, homing beams and boss tentacles with scrolling energy textures.
+**Puzzle games** connect nodes, pipes and circuit wires, lighting them up as puzzles complete.
+**Tower defense** draws targeting beams and chain-lightning arcs between enemies.
+**RPGs** show spell tethers, leashes and skill-tree links.
+**Strategy games** draw supply routes, borders and unit paths from waypoint lists.
+**Racing games** render track edges, drift trails and boost streaks.
+**Fishing and farming games** render fishing lines, hoses and vines.
+**Rhythm games** draw note highways and connecting slides between holds.
+**Physics sandboxes** render ropes, springs and chains over physics joints.
+**Card and board games** animate links between related cards or path highlights on boards.
+**Metroidvanias** use it for grapples, tethers and energy conduits that open with upgrades.
+**Space games** render tractor beams, docking cables and orbit paths.
+**Horror games** animate tentacles, cables and flickering wires with distortion.
+**Educational apps** draw graph edges, connectors and flow arrows.
+**Idle games** show resource flows along pipes with scrolling textures.
+**Sports games** draw trajectory previews, pass lines and swing paths.
+**Party games** render jump ropes, tug-of-war ropes and confetti streamers.
+**Stealth games** draw laser tripwires and camera sight lines.
+**Roguelikes** render lightning, whips and chain attacks that reach across rooms.
 
-**Metroidvania:** Render energy conduits that animate only in powered sectors and change color by unlock tier.
+## 17. C3 Debugger
 
-**Top-down shooter:** Build directional warning lasers and boss telegraph lines with additive blend for clarity.
-
-**Bullet hell:** Draw pattern guides and dynamic bullet stream lanes that pulse before firing cycles.
-
-**Racing:** Use lane guides, drafting lines, and checkpoint ribbons that flow with speed boosts.
-
-**Tower defense:** Connect tower chain-lightning arcs to first target and recolor links by damage type.
-
-**RTS:** Show rally paths, supply links, and command chains between units and structures.
-
-**City builder:** Visualize utility networks like power, water, and data with line color indicating load.
-
-**Puzzle:** Build wiring, mirror-laser paths, and route validation overlays with immediate visual feedback.
-
-**Survival crafting:** Display tether lines, cable runs, and power-grid diagnostics between devices.
-
-**Action RPG:** Render temporary slash trails, spell tethers, and healing beams between allies.
-
-**Tactical RPG:** Show projected movement splines and skill range arcs before confirming actions.
-
-**Stealth:** Draw vision cones as edge lines or security beam paths that enable or disable by alarm state.
-
-**Sports:** Use pass prediction lines and curve previews for trick shots or set-piece planning.
-
-**Visual novel:** Add stylized scene connectors and thematic thread effects during dialogue transitions.
-
-**Rhythm:** Draw lane pulses and beat-synced energy streams that scroll in time with song BPM.
-
-**Idle game:** Visualize production chains and resource transfer links across systems on one dashboard.
-
-**Educational:** Show vector paths, wave motion, and graph links for interactive learning scenes.
-
-**Simulation:** Render traffic flow corridors and signal routing overlays in management UIs.
-
-**Horror:** Use flickering unstable power lines and occult tether effects that intensify with events.
-
-## 16. C3 Debugger
-
-Line Renderer 2D exposes debugger properties through a section titled `$MeshStroke`.
-
-How to open:
-
-1. Preview your project.
-2. Open the Construct debugger panel.
-3. Select the Line Renderer 2D instance in object list.
-4. Expand the `$MeshStroke` section.
+The debugger shows one section, **Line Renderer**, under the host object.
 
 | Field | Meaning |
 |---|---|
-| $pointCount | Current control point count. |
-| $vertexCount | Vertex count of last built mesh. |
-| $lineLength | Last measured polyline length. |
-| $distortAmplitude | Active distortion amplitude. |
-| $uvScrollOffset | Accumulated UV offset. |
-| $blendMode | Active blend mode key. |
-| $meshRebuildCount | Total rebuilds since instance start. |
-| $lastTickRebuilt | Whether last tick rebuilt mesh. |
-| $renderLOD | LOD cap value or off. |
-| $renderedPointCount | Point count used in last build after LOD. |
-| $distortResolution | Distortion subdivision value. |
-| $isCulled | Last culling result. |
-| $coordSpace | Current coordinate space key. |
+| enabled | Whether the line is generated. |
+| coordSpace | absolute or relative. |
+| pointCount | Control points in the list. |
+| renderedPointCount | Points drawn after the maximum drawn points limit. |
+| meshColumns | Columns of the mesh currently created on the host. |
+| vertexCount | Mesh vertices in the last rebuild. |
+| lineLength | Length of the rendered polyline. |
+| textureMapping | Mapping used in the last rebuild (tile or stretch). |
+| endCapStyle | Current cap style. |
+| joinStyle | Joins in use (tubes show simple). |
+| crossSection | Ribbon or tube point count. |
+| meshRows | Rows of the mesh created on the host. |
+| ribbonFacing | Current facing mode. |
+| cameraSource | Where the billboard camera comes from: manual, the 3D Camera object, or none. |
+| uvScrollOffset | Accumulated scroll distance. |
+| distortAmplitude | Current amplitude. |
+| distortResolution | Subdivisions per segment. |
+| renderLOD | LOD cap, or off. |
+| autoFit | Whether auto-fit is enabled. |
+| isCulled | Whether the last update was skipped by off-screen culling. |
+| meshRebuildCount | Rebuilds since creation. |
+| lastTickRebuilt | Whether the last tick rebuilt the mesh. |
 
-## 17. Scripting (C3 Script / JavaScript)
+Open the debugger with the **Debug layout** button in the editor toolbar, select the host instance and expand the behavior section.
 
-This addon has many `expose: true` ACEs and runtime public getters, so script integration is available.
+## 18. Scripting (C3 Script / JavaScript)
 
-### Accessing the plugin
-
-Plugin access comes from the object name in your project, not the addon id string.
+### Accessing the behavior
 
 ```js
-// If your object is named LineRenderer2D in the project:
-const inst = runtime.objects.LineRenderer2D.getFirstInstance();
+const rope = runtime.objects.Rope.getFirstInstance();
+const line = rope.behaviors.LineRenderer; // the name you gave the behavior in the editor
 ```
 
 ### Calling actions from script
 
-Exposed ACE actions become prototype methods with PascalCase names from file names.
-Examples: `a.SetPoint.js` -> `SetPoint(...)`, `a.BuildBezier.js` -> `BuildBezier(...)`.
-Combo parameters are received as 0-based indices in script calls.
+Every action is exposed on the behavior instance as a PascalCase method named after the action. The methods are the same functions the event sheet calls, so they have the same side-effects. Combo parameters are passed as 0-based indices.
 
 ```js
-inst.SetPointCount(4);
-inst.SetPoint(0, 100, 100, 16);
-inst.SetPoint(1, 220, 120, 14);
-inst.SetPoint(2, 340, 150, 10);
-inst.SetPoint(3, 460, 180, 8);
-inst.SetBlendMode(1); // 0 normal, 1 additive, 2 multiply, 3 screen
-inst.SetCoordSpace(1); // 0 absolute, 1 relative
-```
-
-The instance **color filter** and **opacity** use the standard world-instance surface (there is no dedicated color action):
-
-```js
-inst.colorRgb = [1, 0.6, 0.3]; // tint the whole stroke (values 0-1)
-inst.opacity  = 0.5;           // master opacity (0-1)
-// per-point colors are separate: inst.SetAllColors(255, 200, 120, 100);
+line.SetCoordSpace(0);                 // 0 = absolute, 1 = relative
+line.SetLine(100, 100, 400, 160);
+line.SetPointWidth(1, 4);
+line.AddPoint(500, 200, 8);
+line.SetDistortion(6, 0.2, 10);
+// texture mapping is derived from the host: Tiled Background tiles, Sprite stretches
+line.SetEndCapStyle(2);                // 0 = round, 1 = none, 2 = square
+line.SetJoinStyle(1);                  // 0 = simple, 1 = miter, 2 = bevel, 3 = round
+line.SetCrossSection(8);               // tube with 8 points around it
+line.SetBillboardCamera(1, 0, 0, 800); // 0 = automatic, 1 = manual x, y, z
+line.SetPointToImagePoint(0, hook, 0, "tip");   // face 0 = none
+line.SetPointToNode(1, model, 1, "hand_r");      // node type 0 = mesh, 1 = bone
+line.SetEnabled(1);                    // 0 = disabled, 1 = enabled
+line.FitObjectToLine();
 ```
 
 ### Reading state from script
 
-Expressions are for event sheets. Script reads runtime methods and getters directly.
-
 ```js
-const count = inst.MeshPointCount;
-const x0 = inst.MeshGetPointX(0);
-const y0 = inst.MeshGetPointY(0);
-const width0 = inst.MeshGetPointWidth(0);
-const r0 = inst.MeshGetPointR(0);
-const g0 = inst.MeshGetPointG(0);
-const b0 = inst.MeshGetPointB(0);
-const a0 = inst.MeshGetPointOpacity(0);
-
-const len = inst.MeshLineLength;
-const verts = inst.MeshVertexCount;
-const rendered = inst.MeshRenderedPointCount;
-const lod = inst.MeshRenderLOD;
-const distAmp = inst.MeshDistortAmplitude;
-const distFreq = inst.MeshDistortFrequency;
-const distSpeed = inst.MeshDistortSpeed;
-const uvSpeed = inst.MeshUVScrollSpeed;
-const uvOffset = inst.MeshUVScrollOffset;
-const tileLen = inst.MeshTextureTileLength;
-const space = inst.MeshCoordSpace;
+line.MeshPointCount;          // number of points
+line.MeshGetPointX(i);        // layout X of point i
+line.MeshGetPointY(i);
+line.MeshGetPointZ(i);
+line.MeshGetPointWidth(i);
+line.MeshLineLength;
+line.MeshVertexCount;
+line.MeshRenderedPointCount;
+line.MeshCoordSpace;          // "absolute" | "relative"
+line.MeshTextureMapping;      // "tile" (Tiled Background) | "stretch" (Sprite), derived from the host
+line.MeshEndCapStyle;         // "round" | "flat" | "square"
+line.MeshJoinStyle;           // "simple" | "miter" | "bevel" | "round"
+line.MeshEnabled;
 ```
 
 ### Listening to events from script
 
-This plugin runtime provides `on(tag, callback)` and `off(tag, callback)`.
-Supported tags are `OnMeshRebuilt` and `OnPointCountChanged`.
-
 ```js
-function onRebuild() {
-  console.log("Line rebuilt", inst.MeshVertexCount);
-}
-
-inst.on("OnMeshRebuilt", onRebuild);
-// later
-inst.off("OnMeshRebuilt", onRebuild);
+line.on("OnMeshRebuilt", () => console.log("rebuilt", line.MeshVertexCount));
+line.on("OnPointCountChanged", () => console.log("points", line.MeshPointCount));
 ```
 
-### Looping patterns
-
-Use count plus indexed getters like a standard for-loop.
+### Looping over points
 
 ```js
-for (let i = 0; i < inst.MeshPointCount; i++) {
-  const x = inst.MeshGetPointX(i);
-  const y = inst.MeshGetPointY(i);
-  const w = inst.MeshGetPointWidth(i);
-  // process point data
+for (let i = 0; i < line.MeshPointCount; i++) {
+  console.log(i, line.MeshGetPointX(i), line.MeshGetPointY(i));
 }
 ```
 
-### Complete script example
+### Complete example
 
 ```js
-function setupLaser(runtime, source, target) {
-  const inst = runtime.objects.LineRenderer2D.getFirstInstance();
-  if (!inst) return;
-
-  inst.SetPointCount(2);
-  inst.SetAllColors(120, 240, 255, 100);
-  inst.SetAllWidths(10);
-  inst.SetBlendMode(1);
-  inst.SetUVScrollSpeed(180);
-  inst.SetDistortion(8, 2.2, 1.1);
-
-  const onRebuild = () => {
-    const info = `len=${inst.MeshLineLength.toFixed(1)} verts=${inst.MeshVertexCount}`;
-    console.log(info);
-  };
-  inst.on("OnMeshRebuilt", onRebuild);
-
-  runtime.addEventListener("tick", () => {
-    inst.ConnectObjects(source, target);
-    if (inst.MeshLineLength > 900) {
-      inst.SetRenderLOD(8);
-    } else {
-      inst.SetRenderLOD(0);
-    }
-  });
-}
+runtime.addEventListener("tick", () => {
+  const rope = runtime.objects.Rope.getFirstInstance();
+  const line = rope.behaviors.LineRenderer;
+  const a = runtime.objects.PegA.getFirstInstance();
+  const b = runtime.objects.PegB.getFirstInstance();
+  if (line.MeshPointCount !== 2) line.SetLine(a.x, a.y, b.x, b.y);
+  line.SetPointXY(0, a.x, a.y);
+  line.SetPointXY(1, b.x, b.y);
+});
 ```
 
-## 18. Feature Deep-Dives
+## 19. Feature Deep-Dive: How the Mesh Works
 
-### Coordinate Space Strategy
+Construct lets any Sprite or Tiled Background be drawn through a **mesh**, a grid of points in normalised object co-ordinates where (0, 0) is the top-left of the unrotated box and (1, 1) the bottom-right. Points may lie outside that range.
 
-`absolute` is best when points come from many world references and must ignore object transform.
+Each rebuild the behavior:
 
-`relative` is best when line shape is local to one object, for example weapon slashes, engine trails, or attachable FX.
+1. Applies the maximum drawn points limit and the co-ordinate space transform to the control points.
+2. Subdivides segments by the distort resolution and computes the arc length and tangent at each sample.
+3. Builds one **column** per sample: a left and a right vertex at plus and minus the width along the ribbon's width axis, plus the distortion offset. Corners emit extra columns for the Bevel and Round join styles, and round caps add four narrowing columns at each end.
+4. Converts every vertex from layout space back into the host's normalised box (inverse of position, angle and size) and writes it with `setMeshPoint`, with a Z offset relative to the host and texture co-ordinates derived from arc length.
 
-Comparison:
+Because the mesh grid is columns x 2, the whole line is one strip and a change in column count is the only time the mesh is recreated. Texture co-ordinates for a Tiled Background are scaled by the image size divided by the object size, so one unit equals one image repeat regardless of how the host was sized in the editor.
 
-| Mode | Best for | Tradeoff |
-|---|---|---|
-| absolute | World-linked lines between objects | Requires explicit point updates for motion |
-| relative | Prefab-like reusable effects that move/rotate together | Object transform changes all points at once |
+## 20. Tips and Common Mistakes
 
-Example swap logic:
-
-```text
-Event: On state changed to "Attached"
-  Action: LineRenderer2D -> "Set coordinate space to {0}", "relative"
-
-Event: On state changed to "Detached"
-  Action: LineRenderer2D -> "Set coordinate space to {0}", "absolute"
-```
-
-### Distortion and LOD Balancing
-
-High distortion plus high resolution creates smooth effects but costs more vertices. Use quality tiers.
-
-| Tier | Distort amplitude | Distort resolution | Render LOD |
-|---|---:|---:|---:|
-| Near camera | 12 | 2 | 0 |
-| Mid distance | 8 | 1 | 20 |
-| Far distance | 2 | 1 | 8 |
-
-```text
-Event: Every 0.25 seconds
-  Condition: DistanceToCamera < 600
-  Action: LineRenderer2D -> "Set distortion amplitude {0}", 12
-  Action: LineRenderer2D -> "Set distort resolution to {0}", 2
-  Action: LineRenderer2D -> "Set render LOD to {0}", 0
-```
-
-### Texture, Tiling, Color, and Effects
-
-The stroke is textured by the object's **own image** — there is no texture property to assign. Edit it like a Sprite:
-
-1. Double-click the instance in the Layout View (or right-click → *Edit*) to open the Animations Editor.
-2. Paint or import/paste your stroke texture. Make it **seamless left-to-right** so tiled repeats have no seam.
-3. Back in events, control how it maps and moves:
-
-```text
-Event: On start of layout
-  Action: LineRenderer2D -> "Set texture tile length to {0}", 96   // pixels per repeat
-  Action: LineRenderer2D -> "Set UV scroll speed to {0}", 70       // flow animation
-```
-
-How the layers combine:
-
-| Layer | Set by | Notes |
-|---|---|---|
-| Stroke image | Object image (edit like a Sprite) | Tiled along the line; blank image = solid line |
-| Per-point color | `SetPointColor`, `SetAllColors` | Interpolates between points for gradients/tapering |
-| Instance color filter | Properties Bar / `colorRgb` in script | Tints the whole stroke on top of per-point colors |
-| Master opacity | `SetOpacity` action | Multiplies the whole stroke |
-| Blend mode | `SetBlendMode` action / property | `additive` for glow, `multiply` for shadowing, etc. |
-| Effects | Add effect on the object (like a Sprite) | Applied to the final rendered stroke |
-
-Tips:
-
-- **Tiling needs `IsTiled` repeat-wrap**, which the addon enables for you — so UVs simply repeat as the line gets longer. You do not need to tile the texture by hand.
-- Use a tall, thin seamless image: width tiles **along** the line, height maps **across** the stroke width (edge to edge).
-- For energy/laser looks, combine `additive` blend, `UV scroll speed`, and a soft gradient image.
-- Effects (glow, warp, tint) stack on top of distortion — keep distortion modest when an effect already adds movement.
-
-## 19. Tips and Common Mistakes
-
-- Keep point indices in range, or guard with `IsPointIndexValid` for dynamic loops.
-- Remember combo values in script are numeric indices, not string labels.
-- Do not overuse `SmoothPath` every tick; run it when source points change.
-- Relative space changes how transforms apply, so verify width and scale interactions.
-- If a line looks static, check `UVScrollSpeed` and `DistortAmplitude` are non-zero.
-- If color appears wrong, verify you are passing RGB 0-255 and opacity 0-100.
-- To texture a stroke, edit the **object image** (double-click, like a Sprite) — there is no texture property to assign anymore.
-- For clean tiling, make the image **seamless left-to-right**; the addon repeats it for you (no manual tiling needed).
-- A textured stroke that looks blank usually means the object image is empty — paint or import it.
-- Per-point color, the instance color filter, and effects are independent layers — combine them deliberately rather than fighting one with another.
-- The editor preview now follows the instance's position, rotation, size, and scene-graph parent — use *solid* or *animated* preview to see the texture in the Layout View.
-- Use debugger fields to confirm whether mesh is rebuilding too often.
-- Enable frustum culling for many off-screen lines.
-- Use one line instance per independent visual state.
-- Destroy temporary line instances after short-lived effects to avoid clutter.
+- **The editor shows the plain object.** Behaviors cannot draw in the Layout View, so the line only appears in preview. Size and place the host to roughly cover the line in the editor for easier selection.
+- **Widths are half-thickness.** Width 16 gives a 32 pixel wide line.
+- **Sprites cannot tile or scroll.** Their frame is a spritesheet region, so the image is stretched once along the line. Use a Tiled Background for repeating or scrolling textures.
+- **Absolute lines outside the box may be culled.** Enable auto-fit (or size the host to cover the line) so Construct's bounding box matches the visible line.
+- **Relative space scales with the object.** Resizing the host stretches the line by the ratio to its creation size. Use absolute space for lines that must stay in layout pixels.
+- **Only one Line Renderer per object.** The behavior owns the host mesh.
+- **Other mesh actions will be overwritten.** The host's own Set mesh point actions are replaced on the next rebuild.
+- **Point colors are gone.** Tint the whole line with the host's color and opacity, or use a gradient image.
+- **Distortion looks faceted?** Raise distort resolution, which adds mesh columns between control points.
+- **Billboard needs a camera position.** The behavior finds the 3D Camera object automatically; if your project has none, use Set billboard camera in Manual mode, otherwise Billboard behaves like Flat.
+- **Tubes use Simple joins.** A ring needs a centre, so Miter, Bevel and Round only apply to 2-point ribbons.
+- **Relative space with a 3D-rotated host.** The line rotates with the host as expected, but object-following actions only undo the host's 2D angle when converting layout positions into local space. Use Absolute space for lines that attach to other objects.

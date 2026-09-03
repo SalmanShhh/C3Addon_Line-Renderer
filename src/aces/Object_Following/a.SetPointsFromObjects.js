@@ -1,8 +1,8 @@
 export const config = {
   listName: "Set points from objects",
-  displayText: "Set points from objects {0}",
-  description: "Rebuild the point list from picked instances.",
-  params: [{ id: "object", name: "Object", desc: "Objects to read.", type: "object" }],
+  displayText: "Set {my} points from {0} instances",
+  description: "Replace all points with the positions of the picked instances of an object, one point per instance.",
+  params: [{ id: "object", name: "Object", desc: "The object whose picked instances become the points.", type: "object" }],
 };
 
 export const expose = true;
@@ -14,14 +14,9 @@ export default function (object) {
   }
 
   this._replacePoints(
-    instances.map((instance) => ({
-      x: +instance.x || 0,
-      y: +instance.y || 0,
-      width: this._defaultWidth,
-      r: 1,
-      g: 1,
-      b: 1,
-      a: 1,
-    }))
+    instances.map((instance) => {
+      const position = this._instanceToPointSpace(instance);
+      return this._newPoint(position.x, position.y, this._defaultWidth, position.z);
+    })
   );
 }

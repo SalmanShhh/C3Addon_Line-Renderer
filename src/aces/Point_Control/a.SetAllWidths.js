@@ -1,8 +1,8 @@
 export const config = {
-  listName: "Set all widths",
-  displayText: "Set all widths to {0}",
-  description: "Set every point width.",
-  params: [{ id: "width", name: "Width", desc: "Width value.", type: "number", initialValue: "16" }],
+  listName: "Set width of all points",
+  displayText: "Set {my} width of all points to {0}",
+  description: "Set the width of the line at every point.",
+  params: [{ id: "width", name: "Width", desc: "Half the thickness of the line, in pixels.", type: "number", initialValue: "16" }],
 };
 
 export const expose = true;

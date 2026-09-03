@@ -1,6 +1,6 @@
 export const config = {
   returnType: "number",
-  description: "Vertex count of the last built mesh.",
+  description: "The number of mesh points used to draw the line.",
   params: [],
 };
 

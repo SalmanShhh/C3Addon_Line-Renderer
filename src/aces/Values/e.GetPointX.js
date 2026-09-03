@@ -1,7 +1,7 @@
 export const config = {
   returnType: "number",
-  description: "World X of a control point.",
-  params: [{ id: "index", name: "Index", desc: "Control point index.", type: "number" }],
+  description: "The layout X co-ordinate of a point.",
+  params: [{ id: "index", name: "Index", desc: "The zero-based index of the point.", type: "number" }],
 };
 
 export const expose = true;

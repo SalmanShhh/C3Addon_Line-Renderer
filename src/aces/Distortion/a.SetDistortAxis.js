@@ -1,21 +1,22 @@
 import { DISTORT_AXIS_KEYS } from "../../shared/meshstrokeShared.js";
 
 export const config = {
-  listName: "Set distort axis",
-  displayText: "Set distort axis to {0}",
-  description: "Set which axis distortion offsets apply to.",
+  listName: "Set distortion axis",
+  displayText: "Set {my} distortion axis to {0}",
+  description: "Set the direction the distortion wave moves points in.",
   params: [
     {
       id: "axis",
       name: "Axis",
-      desc: "Distortion axis.",
+      desc: "The direction of the distortion offset.",
       type: "combo",
       initialValue: "both",
       items: [
-        { x_only: "X only" },
-        { y_only: "Y only" },
-        { both: "Both" },
+        { x_only: "X" },
+        { y_only: "Y" },
+        { both: "X and Y" },
         { perpendicular: "Perpendicular" },
+        { z_only: "Z elevation" },
       ],
     },
   ],

@@ -1,7 +1,7 @@
 export const config = {
-  listName: "On mesh rebuilt",
-  displayText: "On mesh rebuilt",
-  description: "Triggered when the mesh is rebuilt this tick.",
+  listName: "On line updated",
+  displayText: "On {my} line updated",
+  description: "Triggered after the line's mesh has been updated.",
   isTrigger: true,
   params: [],
 };

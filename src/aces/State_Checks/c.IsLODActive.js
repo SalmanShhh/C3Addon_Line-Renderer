@@ -1,7 +1,7 @@
 export const config = {
-  listName: "Is LOD active",
-  displayText: "LOD is active",
-  description: "True if the render LOD cap is reducing the rendered point count.",
+  listName: "Is limiting drawn points",
+  displayText: "{my} is limiting drawn points",
+  description: "True if the maximum drawn points setting is reducing the number of points drawn.",
   params: [],
 };
 

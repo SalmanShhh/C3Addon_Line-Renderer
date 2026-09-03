@@ -1,17 +1,66 @@
+// Shared stroke geometry for the Line Renderer behavior.
+//
+// A behavior cannot draw anything itself: it renders by writing the host
+// object's mesh distortion grid (createMesh / setMeshPoint). A stroke is
+// therefore built as a list of COLUMNS, one per sample along the path, each
+// holding a left and a right vertex in layout (world) space. The runtime maps
+// those columns onto an N x 2 host mesh (columns = samples, rows = sides).
+
+// Order matters: combo properties/ACEs map their item index into this array, so
+// new axes must be appended at the END to keep existing indices stable.
 export const DISTORT_AXIS_KEYS = [
   "x_only",
   "y_only",
   "both",
   "perpendicular",
+  "z_only",
 ];
 
 export const END_CAP_KEYS = ["round", "flat", "square"];
-export const BLEND_MODE_KEYS = ["normal", "additive", "multiply", "screen"];
-export const SAMPLING_MODE_KEYS = ["auto", "nearest", "linear"];
-export const EDITOR_PREVIEW_KEYS = ["wireframe", "solid", "animated"];
 export const COORD_SPACE_KEYS = ["absolute", "relative"];
 
-const CAP_SEGMENTS = 8;
+// How the ribbon's width axis is oriented in 3D space:
+// - flat:      width axis stays in the layout XY plane (2D behaviour; also
+//              correct for Z-elevated flat ribbons).
+// - billboard: width axis faces the 3D camera (needs a camera position; falls
+//              back to the default view direction when none is available).
+// - up_vector: width axis is perpendicular to the tangent and a world up vector
+//              (0,0,1), a flat "tape" that twists as the curve turns in 3D.
+export const RIBBON_FACING_KEYS = ["flat", "billboard", "up_vector"];
+
+// How corners between segments are built:
+// - simple: one column on the corner bisector at the nominal width (corners get
+//           thinner as they sharpen; cheapest).
+// - miter:  one column on the bisector stretched to the edges' intersection
+//           point; beyond MITER_LIMIT it falls back to bevel.
+// - bevel:  two columns; the outer edge is chipped flat, the inner vertices
+//           share the inner intersection point so nothing overlaps.
+// - round:  several columns sweeping the outer vertex around the corner.
+export const JOIN_STYLE_KEYS = ["simple", "miter", "bevel", "round"];
+
+// Extra mesh columns emitted per round end cap (quarter-circle steps).
+export const ROUND_CAP_COLUMNS = 4;
+// Round joins use this many arc steps per quarter turn (min 1, max at 180°).
+const ROUND_JOIN_STEPS_PER_QUARTER = 4;
+const ROUND_JOIN_MAX_STEPS = ROUND_JOIN_STEPS_PER_QUARTER * 2;
+// Miter length limit as a multiple of the half-width (miter -> bevel fallback,
+// and the cap on how far the inner vertex may slide toward the corner).
+const MITER_LIMIT = 4;
+// Turns below this angle (radians) are treated as straight.
+const JOIN_EPSILON = 1e-3;
+const DEFAULT_UP = { x: 0, y: 0, z: 1 };
+
+// Worst-case extra columns one interior corner can add for a join style.
+export function maxJoinExtraColumns(joinStyle) {
+  const style = getComboKey(joinStyle, JOIN_STYLE_KEYS, JOIN_STYLE_KEYS[0]);
+  if (style === "round") {
+    return ROUND_JOIN_MAX_STEPS;
+  }
+  if (style === "bevel" || style === "miter") {
+    return 1;
+  }
+  return 0;
+}
 
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -39,79 +88,53 @@ export function getComboKey(value, keys, fallback = keys[0]) {
   return keys.includes(normalized) ? normalized : fallback;
 }
 
-export function makePoint(x = 0, y = 0, width = 16) {
+// A control point: position (x, y, z) and half-thickness `width`.
+export function makePoint(x = 0, y = 0, width = 16, z = 0) {
   return {
     x: toFiniteNumber(x, 0),
     y: toFiniteNumber(y, 0),
+    z: toFiniteNumber(z, 0),
     width: Math.max(0, toFiniteNumber(width, 0)),
-    r: 1,
-    g: 1,
-    b: 1,
-    a: 1,
   };
 }
 
 export function clonePoint(point) {
-  return {
-    x: toFiniteNumber(point?.x, 0),
-    y: toFiniteNumber(point?.y, 0),
-    width: Math.max(0, toFiniteNumber(point?.width, 0)),
-    r: clamp01(toFiniteNumber(point?.r, 1)),
-    g: clamp01(toFiniteNumber(point?.g, 1)),
-    b: clamp01(toFiniteNumber(point?.b, 1)),
-    a: clamp01(toFiniteNumber(point?.a, 1)),
-  };
+  return makePoint(point?.x, point?.y, point?.width, point?.z);
 }
 
 export function createInitialPoints(count, width) {
   return Array.from({ length: toCount(count, 2) }, () => makePoint(0, 0, width));
 }
 
-export function colorFromC3(r, g, b, opacity) {
-  const alpha = clamp01(toFiniteNumber(opacity, 100) / 100);
-  const red = clamp01(toFiniteNumber(r, 255) / 255);
-  const green = clamp01(toFiniteNumber(g, 255) / 255);
-  const blue = clamp01(toFiniteNumber(b, 255) / 255);
+// Seed control points as a horizontal ribbon spanning the host object's box in
+// LOCAL (origin-relative) pixels, so a freshly added behavior renders the host
+// exactly across its bounding box (it looks unchanged until points are
+// edited). Points run along the box's vertical centre line from the left edge
+// to the right edge. Point width is half the box height so the +/-width ribbon
+// fills the box vertically. Z defaults to 0 (flat).
+export function createBoxSpanningPoints(count, width, height, originX, originY, fallbackWidth = 16) {
+  const n = toCount(count, 2);
+  const w = toFiniteNumber(width, 0);
+  const h = toFiniteNumber(height, 0);
+  const ox = clamp01(toFiniteNumber(originX, 0.5));
+  const oy = clamp01(toFiniteNumber(originY, 0.5));
 
-  return {
-    r: red * alpha,
-    g: green * alpha,
-    b: blue * alpha,
-    a: alpha,
-  };
+  const leftX = -ox * w;
+  const rightX = (1 - ox) * w;
+  const midY = (0.5 - oy) * h;
+  const halfThickness =
+    Math.abs(h) > 0 ? Math.abs(h) * 0.5 : Math.max(0, toFiniteNumber(fallbackWidth, 16));
+
+  return Array.from({ length: n }, (_unused, index) => {
+    const t = n > 1 ? index / (n - 1) : 0;
+    return makePoint(leftX + (rightX - leftX) * t, midY, halfThickness, 0);
+  });
 }
 
-export function colorToC3(point) {
-  const alpha = clamp01(toFiniteNumber(point?.a, 0));
-  if (alpha <= 0) {
-    return { r: 0, g: 0, b: 0, opacity: 0 };
-  }
-
-  return {
-    r: Math.round(clamp01(toFiniteNumber(point?.r, 0) / alpha) * 255),
-    g: Math.round(clamp01(toFiniteNumber(point?.g, 0) / alpha) * 255),
-    b: Math.round(clamp01(toFiniteNumber(point?.b, 0) / alpha) * 255),
-    opacity: Math.round(alpha * 100),
-  };
-}
-
-export function getBlendModeValue(key) {
-  return {
-    normal: "normal",
-    additive: "additive",
-    multiply: "multiply",
-    screen: "screen",
-  }[key] ?? "normal";
-}
-
-export function getSamplingValue(key) {
-  return {
-    auto: "auto",
-    nearest: "nearest",
-    linear: "bilinear",
-  }[key] ?? "auto";
-}
-
+// Transform a local-space point into layout space using the host transform.
+// The host angle is a yaw about the Z axis (rotates the XY plane), so the local
+// Z offset passes through unchanged; baseZ (the host's absolute Z elevation) is
+// applied later in the column builder, not here.
 export function transformRelativePoint(point, transform) {
   const scaleX = toFiniteNumber(transform?.scaleX, 1);
   const scaleY = toFiniteNumber(transform?.scaleY, 1);
@@ -127,12 +150,9 @@ export function transformRelativePoint(point, transform) {
   return {
     x: originX + localX * cosAngle - localY * sinAngle,
     y: originY + localX * sinAngle + localY * cosAngle,
+    z: toFiniteNumber(point.z, 0),
     width:
       Math.max(Math.abs(scaleX), Math.abs(scaleY)) * Math.max(0, toFiniteNumber(point.width, 0)),
-    r: clamp01(toFiniteNumber(point.r, 1)),
-    g: clamp01(toFiniteNumber(point.g, 1)),
-    b: clamp01(toFiniteNumber(point.b, 1)),
-    a: clamp01(toFiniteNumber(point.a, 1)),
   };
 }
 
@@ -140,44 +160,105 @@ function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
-function lengthOf(dx, dy) {
-  return Math.hypot(dx, dy);
+function length3(dx, dy, dz) {
+  return Math.hypot(dx, dy, dz);
 }
 
-function normalize(dx, dy) {
-  const length = lengthOf(dx, dy);
-  if (length <= 1e-6) {
-    return { x: 1, y: 0 };
-  }
-
+function cross3(ax, ay, az, bx, by, bz) {
   return {
-    x: dx / length,
-    y: dy / length,
+    x: ay * bz - az * by,
+    y: az * bx - ax * bz,
+    z: ax * by - ay * bx,
   };
 }
 
+function normalize3(v) {
+  const length = Math.hypot(v.x, v.y, v.z);
+  if (length <= 1e-6) {
+    return null;
+  }
+  return { x: v.x / length, y: v.y / length, z: v.z / length };
+}
+
+function dot3(a, b) {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+function scale3(v, s) {
+  return { x: v.x * s, y: v.y * s, z: v.z * s };
+}
+
+function add3(a, b) {
+  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+}
+
+function directionBetween(a, b) {
+  return normalize3({ x: b.x - a.x, y: b.y - a.y, z: (b.z ?? 0) - (a.z ?? 0) });
+}
+
+// Width axis used for the flat ribbon: perpendicular to the tangent's
+// projection onto the XY plane.
+function flatWidthAxis(tx, ty) {
+  const length = Math.hypot(tx, ty);
+  if (length <= 1e-6) {
+    return { x: 0, y: 0, z: 0 };
+  }
+  return { x: -ty / length, y: tx / length, z: 0 };
+}
+
+// Compute the unit width axis at a sample for the chosen ribbon orientation.
+function computeWidthAxis(sample, orientation, up, cameraPosition, baseZ) {
+  const tx = sample.tx;
+  const ty = sample.ty;
+  const tz = sample.tz;
+
+  if (orientation === "billboard") {
+    let vx = 0;
+    let vy = 0;
+    let vz = 1;
+    if (cameraPosition) {
+      vx = cameraPosition[0] - sample.x;
+      vy = cameraPosition[1] - sample.y;
+      vz = cameraPosition[2] - (baseZ + sample.z);
+    }
+    return normalize3(cross3(tx, ty, tz, vx, vy, vz)) ?? flatWidthAxis(tx, ty);
+  }
+
+  if (orientation === "up_vector") {
+    return (
+      normalize3(cross3(tx, ty, tz, up.x, up.y, up.z)) ??
+      normalize3(cross3(tx, ty, tz, 0, 1, 0)) ?? { x: 1, y: 0, z: 0 }
+    );
+  }
+
+  return flatWidthAxis(tx, ty);
+}
+
+function normalizeOrZero(dx, dy, dz) {
+  return normalize3({ x: dx, y: dy, z: dz }) ?? { x: 1, y: 0, z: 0 };
+}
+
+// Subdivide the polyline and annotate every sample with its arc length and unit
+// tangent (central difference).
 function samplePoints(points, distortResolution) {
   const resolution = Math.max(1, Math.floor(toFiniteNumber(distortResolution, 1)));
   const sampled = [];
 
+  // Each segment emits t in [0, 1): its own start point plus the interior
+  // subdivisions. The next segment's t = 0 is the shared control point, and the
+  // final control point is appended after the loop, so nothing is duplicated
+  // and every control point is passed through exactly.
   for (let index = 0; index < points.length - 1; index++) {
     const current = points[index];
     const next = points[index + 1];
 
     for (let step = 0; step < resolution; step++) {
-      if (index > 0 && step === 0) {
-        continue;
-      }
-
       const t = step / resolution;
       sampled.push({
         x: lerp(current.x, next.x, t),
         y: lerp(current.y, next.y, t),
+        z: lerp(current.z ?? 0, next.z ?? 0, t),
         width: lerp(current.width, next.width, t),
-        r: lerp(current.r, next.r, t),
-        g: lerp(current.g, next.g, t),
-        b: lerp(current.b, next.b, t),
-        a: lerp(current.a, next.a, t),
       });
     }
   }
@@ -191,23 +272,24 @@ function samplePoints(points, distortResolution) {
     const next = sampled[index + 1];
 
     if (prev) {
-      arcLength += lengthOf(current.x - prev.x, current.y - prev.y);
+      arcLength += length3(current.x - prev.x, current.y - prev.y, current.z - prev.z);
     }
 
     const before = prev ?? current;
     const after = next ?? current;
-    const tangent = normalize(after.x - before.x, after.y - before.y);
+    const tangent = normalizeOrZero(after.x - before.x, after.y - before.y, after.z - before.z);
 
     current.arcLength = arcLength;
     current.tx = tangent.x;
     current.ty = tangent.y;
-    current.nx = -tangent.y;
-    current.ny = tangent.x;
+    current.tz = tangent.z;
   }
 
   return sampled;
 }
 
+// Render LOD: cap the number of control points used for the mesh by picking an
+// evenly spread subset (always keeping the first and last point).
 function sampleRenderedPoints(points, renderLod) {
   const targetCount = Math.max(0, Math.floor(toFiniteNumber(renderLod, 0)));
   if (targetCount <= 0 || targetCount >= points.length) {
@@ -229,114 +311,115 @@ function sampleRenderedPoints(points, renderLod) {
   return sampled;
 }
 
-function applyDistortion(sample, options) {
+// Distortion offset is a 3D vector. The perpendicular axis uses the ribbon's
+// current width axis (already 3D), so distortion bends the stroke sideways even
+// when it twists through 3D space.
+function applyDistortion(sample, options, widthAxis) {
   const amplitude = Math.max(0, toFiniteNumber(options.distortAmplitude, 0));
   if (amplitude <= 0) {
-    return { x: 0, y: 0 };
+    return { x: 0, y: 0, z: 0 };
   }
 
   const phase =
     toFiniteNumber(options.distortFrequency, 1) * sample.arcLength +
     toFiniteNumber(options.distortPhase, 0);
   const offset = amplitude * Math.sin(phase);
-  const axis = getComboKey(options.distortAxis, DISTORT_AXIS_KEYS, DISTORT_AXIS_KEYS[2]);
+  const axis = getComboKey(options.distortAxis, DISTORT_AXIS_KEYS, "both");
 
   if (axis === "x_only") {
-    return { x: offset, y: 0 };
+    return { x: offset, y: 0, z: 0 };
   }
 
   if (axis === "y_only") {
-    return { x: 0, y: offset };
+    return { x: 0, y: offset, z: 0 };
+  }
+
+  if (axis === "z_only") {
+    return { x: 0, y: 0, z: offset };
   }
 
   if (axis === "perpendicular") {
     return {
-      x: sample.nx * offset,
-      y: sample.ny * offset,
+      x: widthAxis.x * offset,
+      y: widthAxis.y * offset,
+      z: widthAxis.z * offset,
     };
   }
 
-  return { x: offset, y: offset };
+  return { x: offset, y: offset, z: 0 };
 }
 
-function remapColor(sample, opacity, tint) {
-  // Point colors are stored premultiplied (rgb already include the point alpha),
-  // so master opacity scales rgb and alpha together. The optional tint scales rgb only.
-  const alpha = clamp01(sample.a) * opacity;
-  const tr = tint ? clamp01(toFiniteNumber(tint[0], 1)) : 1;
-  const tg = tint ? clamp01(toFiniteNumber(tint[1], 1)) : 1;
-  const tb = tint ? clamp01(toFiniteNumber(tint[2], 1)) : 1;
+function emptyStroke(sourceCount, lineLength = 0, crossSection = 2) {
+  const section = Math.max(2, Math.floor(toFiniteNumber(crossSection, 2)));
   return {
-    r: clamp01(sample.r) * opacity * tr,
-    g: clamp01(sample.g) * opacity * tg,
-    b: clamp01(sample.b) * opacity * tb,
-    a: alpha,
+    columns: [],
+    rows: section > 2 ? section + 1 : 2,
+    crossSection: section,
+    lineLength,
+    arcMin: 0,
+    arcMax: 0,
+    vertexCount: 0,
+    renderedPointCount: sourceCount,
+    bounds: null,
+    minZ: 0,
+    maxZ: 0,
   };
 }
 
-function addVertex(mesh, vertex) {
-  // drawMesh expects 3 components per position (x, y, z); 2D strokes use z = 0.
-  mesh.positions.push(vertex.x, vertex.y, 0);
-  mesh.uvs.push(vertex.u, vertex.v);
-  mesh.colors.push(vertex.r, vertex.g, vertex.b, vertex.a);
-
-  mesh.bounds.left = Math.min(mesh.bounds.left, vertex.x);
-  mesh.bounds.top = Math.min(mesh.bounds.top, vertex.y);
-  mesh.bounds.right = Math.max(mesh.bounds.right, vertex.x);
-  mesh.bounds.bottom = Math.max(mesh.bounds.bottom, vertex.y);
-
-  return mesh.vertexCount++;
+// Mesh rows needed for a cross-section point count (2 = flat ribbon, >2 = tube
+// with the seam vertex duplicated).
+export function rowsForCrossSection(crossSection) {
+  const section = Math.max(2, Math.floor(toFiniteNumber(crossSection, 2)));
+  return section > 2 ? section + 1 : 2;
 }
 
-function addCap(mesh, sample, radius, isStart, opacity, tint) {
-  const centerColor = remapColor(sample, opacity, tint);
-  const centerIndex = addVertex(mesh, {
-    x: sample.x,
-    y: sample.y,
-    u: sample.arcLength,
-    v: 0.5,
-    ...centerColor,
-  });
-
-  const tangentAngle = Math.atan2(sample.ty, sample.tx);
-  const normalAngle = tangentAngle + Math.PI / 2;
-  const from = normalAngle;
-  const to = isStart ? normalAngle + Math.PI : normalAngle - Math.PI;
-  const edgeIndices = [];
-
-  for (let step = 0; step <= CAP_SEGMENTS; step++) {
-    const t = step / CAP_SEGMENTS;
-    const angle = lerp(from, to, t);
-    const vertexColor = remapColor(sample, opacity, tint);
-    edgeIndices.push(
-      addVertex(mesh, {
-        x: sample.x + Math.cos(angle) * radius,
-        y: sample.y + Math.sin(angle) * radius,
-        u: sample.arcLength,
-        v: 0.5,
-        ...vertexColor,
-      })
-    );
+// Upper bound on the mesh columns a stroke can produce for a given number of
+// rendered control points, subdivision count, cap style and join style. Used to
+// keep the host mesh under a vertex budget. Subdivided samples inside a segment
+// are collinear, so only the (n - 2) interior control points can add join
+// columns.
+export function estimateColumnCount(pointCount, distortResolution, endCapStyle, joinStyle) {
+  const n = Math.max(0, Math.floor(toFiniteNumber(pointCount, 0)));
+  if (n < 2) {
+    return 0;
   }
-
-  for (let index = 0; index < edgeIndices.length - 1; index++) {
-    mesh.indices.push(centerIndex, edgeIndices[index], edgeIndices[index + 1]);
-  }
+  const resolution = Math.max(1, Math.floor(toFiniteNumber(distortResolution, 1)));
+  const capStyle = getComboKey(endCapStyle, END_CAP_KEYS, END_CAP_KEYS[0]);
+  const capColumns = capStyle === "round" ? ROUND_CAP_COLUMNS * 2 : capStyle === "square" ? 2 : 0;
+  const joinColumns = Math.max(0, n - 2) * maxJoinExtraColumns(joinStyle);
+  return (n - 1) * resolution + 1 + capColumns + joinColumns;
 }
 
-export function buildStrokeMesh(options) {
+// Build the stroke as a list of columns in layout space.
+//
+// options:
+//   points            control points (x, y, z, width)
+//   renderLod         max control points used (0 = all)
+//   distortResolution subdivisions per segment
+//   distortAmplitude / distortFrequency / distortPhase / distortAxis
+//   endCapStyle       round | flat | square
+//   joinStyle         simple | miter | bevel | round (tubes force simple)
+//   crossSection      2 = flat ribbon, >2 = tube with that many ring points
+//   ribbonFacing      flat | billboard | up_vector
+//   baseZ             host absolute Z elevation (added to every vertex Z)
+//   cameraPosition    [x, y, z] for billboard facing, or null
+//   relativeTransform {x, y, angle, scaleX, scaleY} to map local points to
+//                     layout space, or null when points are already absolute
+//
+// Result:
+//   columns[]           { lx, ly, lz, rx, ry, rz, arcLength, dx, dy, dz, ring }
+//                       (layout space; see columnVertex())
+//   rows / crossSection mesh rows per column and ring point count
+//   lineLength          length of the (LOD-reduced) polyline
+//   arcMin / arcMax     arc-length range covered by the columns (incl. caps)
+//   vertexCount         rows * columns.length
+//   renderedPointCount  control points used after LOD
+//   bounds              axis-aligned XY bounds of all vertices, or null
+//   minZ / maxZ         layout Z range of all vertices
+export function buildStrokeColumns(options) {
   const sourcePoints = Array.isArray(options?.points) ? options.points : [];
   if (sourcePoints.length < 2) {
-    return {
-      positions: new Float32Array(0),
-      uvs: new Float32Array(0),
-      colors: new Float32Array(0),
-      indices: new Uint16Array(0),
-      bounds: null,
-      lineLength: 0,
-      vertexCount: 0,
-      renderedPointCount: sourcePoints.length,
-    };
+    return emptyStroke(sourcePoints.length, 0, options?.crossSection);
   }
 
   const transformed = sampleRenderedPoints(sourcePoints, options.renderLod).map((point) => {
@@ -347,187 +430,302 @@ export function buildStrokeMesh(options) {
 
   let lineLength = 0;
   for (let index = 1; index < transformed.length; index++) {
-    lineLength += lengthOf(
+    lineLength += length3(
       transformed[index].x - transformed[index - 1].x,
-      transformed[index].y - transformed[index - 1].y
+      transformed[index].y - transformed[index - 1].y,
+      transformed[index].z - transformed[index - 1].z
     );
   }
 
-  const stripSamples = samplePoints(transformed, options.distortResolution);
-  if (stripSamples.length < 2) {
-    return {
-      positions: new Float32Array(0),
-      uvs: new Float32Array(0),
-      colors: new Float32Array(0),
-      indices: new Uint16Array(0),
-      bounds: null,
-      lineLength,
-      vertexCount: 0,
-      renderedPointCount: transformed.length,
-    };
+  const samples = samplePoints(transformed, options.distortResolution);
+  if (samples.length < 2) {
+    return emptyStroke(transformed.length, lineLength, options.crossSection);
   }
 
   const capStyle = getComboKey(options.endCapStyle, END_CAP_KEYS, END_CAP_KEYS[0]);
-  const mesh = {
-    positions: [],
-    uvs: [],
-    colors: [],
-    indices: [],
-    bounds: {
-      left: Number.POSITIVE_INFINITY,
-      top: Number.POSITIVE_INFINITY,
-      right: Number.NEGATIVE_INFINITY,
-      bottom: Number.NEGATIVE_INFINITY,
-    },
-    vertexCount: 0,
-  };
+  const joinStyle = getComboKey(options.joinStyle, JOIN_STYLE_KEYS, JOIN_STYLE_KEYS[0]);
+  const orientation = getComboKey(options.ribbonFacing, RIBBON_FACING_KEYS, RIBBON_FACING_KEYS[0]);
+  const up = options.upVector ?? DEFAULT_UP;
+  const cameraPosition = Array.isArray(options.cameraPosition) ? options.cameraPosition : null;
+  const baseZ = toFiniteNumber(options.baseZ, 0);
 
-  const opacity = clamp01(toFiniteNumber(options.opacity, 1));
-  const tint = Array.isArray(options.tint) ? options.tint : null;
-  const stripIndices = [];
-  const workingSamples = stripSamples.map((sample) => ({ ...sample }));
+  const working = samples.map((sample) => ({ ...sample }));
 
   if (capStyle === "square") {
-    const first = workingSamples[0];
-    const last = workingSamples[workingSamples.length - 1];
-    workingSamples.unshift({
+    const first = working[0];
+    const last = working[working.length - 1];
+    working.unshift({
       ...first,
       x: first.x - first.tx * first.width,
       y: first.y - first.ty * first.width,
+      z: first.z - first.tz * first.width,
+      arcLength: first.arcLength - first.width,
     });
-    workingSamples.push({
+    working.push({
       ...last,
       x: last.x + last.tx * last.width,
       y: last.y + last.ty * last.width,
+      z: last.z + last.tz * last.width,
+      arcLength: last.arcLength + last.width,
     });
   }
 
-  const tileLength = Math.max(0.0001, toFiniteNumber(options.textureTileLength, 64));
-  const uvOffset = toFiniteNumber(options.uvScrollOffset, 0) / tileLength;
+  const columns = [];
+  const bounds = {
+    left: Number.POSITIVE_INFINITY,
+    top: Number.POSITIVE_INFINITY,
+    right: Number.NEGATIVE_INFINITY,
+    bottom: Number.NEGATIVE_INFINITY,
+  };
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+  const crossSection = Math.max(2, Math.floor(toFiniteNumber(options.crossSection, 2)));
 
-  for (const sample of workingSamples) {
-    const distortion = applyDistortion(sample, options);
-    const color = remapColor(sample, opacity, tint);
-    const width = Math.max(0, sample.width);
-    const u = sample.arcLength / tileLength + uvOffset;
+  const tube = crossSection > 2;
 
-    const leftIndex = addVertex(mesh, {
-      x: sample.x + sample.nx * width + distortion.x,
-      y: sample.y + sample.ny * width + distortion.y,
-      u,
-      v: 0,
-      ...color,
+  // Row 0 ("left") is the +widthAxis side, row 1 ("right") the -widthAxis side.
+  // `ring` (optional) describes the column as centre + width axis + binormal +
+  // radius so a tube cross-section can be generated around it; explicit join
+  // columns (bevel/round) have no ring and only exist for 2-row ribbons.
+  const addColumnPoints = (left, right, distortion, arcLength, ring = null) => {
+    const lx = left.x + distortion.x;
+    const ly = left.y + distortion.y;
+    const lz = left.z + distortion.z;
+    const rx = right.x + distortion.x;
+    const ry = right.y + distortion.y;
+    const rz = right.z + distortion.z;
+
+    bounds.left = Math.min(bounds.left, lx, rx);
+    bounds.top = Math.min(bounds.top, ly, ry);
+    bounds.right = Math.max(bounds.right, lx, rx);
+    bounds.bottom = Math.max(bounds.bottom, ly, ry);
+
+    if (ring && tube) {
+      minZ = Math.min(minZ, ring.cz - ring.radius + distortion.z);
+      maxZ = Math.max(maxZ, ring.cz + ring.radius + distortion.z);
+      {
+        // A tube reaches `radius` in every direction around its centre.
+        const cx = ring.cx + distortion.x;
+        const cy = ring.cy + distortion.y;
+        bounds.left = Math.min(bounds.left, cx - ring.radius);
+        bounds.top = Math.min(bounds.top, cy - ring.radius);
+        bounds.right = Math.max(bounds.right, cx + ring.radius);
+        bounds.bottom = Math.max(bounds.bottom, cy + ring.radius);
+      }
+    } else {
+      minZ = Math.min(minZ, lz, rz);
+      maxZ = Math.max(maxZ, lz, rz);
+    }
+
+    columns.push({
+      lx, ly, lz, rx, ry, rz, arcLength,
+      dx: distortion.x, dy: distortion.y, dz: distortion.z,
+      ring,
     });
-    const rightIndex = addVertex(mesh, {
-      x: sample.x - sample.nx * width + distortion.x,
-      y: sample.y - sample.ny * width + distortion.y,
-      u,
-      v: 1,
-      ...color,
-    });
+  };
 
-    stripIndices.push(leftIndex, rightIndex);
+  // Regular column: centre, width axis W and the tangent T give the binormal
+  // B = T x W, so a ring around the centre can be generated for tubes.
+  const addColumn = (cx, cy, cz, tangent, widthAxis, distortion, halfWidth, arcLength) => {
+    const w = Math.max(0, halfWidth);
+    const center = { x: cx, y: cy, z: cz };
+    const binormal =
+      normalize3(cross3(tangent.x, tangent.y, tangent.z, widthAxis.x, widthAxis.y, widthAxis.z)) ??
+      DEFAULT_UP;
+    addColumnPoints(
+      add3(center, scale3(widthAxis, w)),
+      add3(center, scale3(widthAxis, -w)),
+      distortion,
+      arcLength,
+      {
+        cx, cy, cz,
+        wx: widthAxis.x, wy: widthAxis.y, wz: widthAxis.z,
+        bx: binormal.x, by: binormal.y, bz: binormal.z,
+        radius: w,
+      }
+    );
+  };
+
+  // Emit the column(s) for one interior sample according to the join style.
+  // Straight samples (and the simple style) produce the single bisector column.
+  const addJoin = (sample, prev, next) => {
+    const straightAxis = computeWidthAxis(sample, orientation, up, cameraPosition, baseZ);
+    const centerZ = baseZ + sample.z;
+    const center = { x: sample.x, y: sample.y, z: centerZ };
+    const w = Math.max(0, sample.width);
+    const dirIn = prev ? directionBetween(prev, sample) : null;
+    const dirOut = next ? directionBetween(sample, next) : null;
+
+    const tangent = { x: sample.tx, y: sample.ty, z: sample.tz };
+    const fallback = () => {
+      addColumn(
+        sample.x,
+        sample.y,
+        centerZ,
+        tangent,
+        straightAxis,
+        applyDistortion(sample, options, straightAxis),
+        w,
+        sample.arcLength
+      );
+    };
+
+    // Tubes always use the simple (bisector) join: their ring needs a centre.
+    if (joinStyle === "simple" || tube || !dirIn || !dirOut || w <= 0) {
+      fallback();
+      return;
+    }
+
+    const turn = Math.acos(clamp(dot3(dirIn, dirOut), -1, 1));
+    if (turn < JOIN_EPSILON) {
+      fallback();
+      return;
+    }
+
+    // Width axes of the incoming and outgoing segments at this corner.
+    const axisIn = computeWidthAxis(
+      { ...sample, tx: dirIn.x, ty: dirIn.y, tz: dirIn.z },
+      orientation, up, cameraPosition, baseZ
+    );
+    const axisOut = computeWidthAxis(
+      { ...sample, tx: dirOut.x, ty: dirOut.y, tz: dirOut.z },
+      orientation, up, cameraPosition, baseZ
+    );
+    const bisector = normalize3(add3(axisIn, axisOut));
+    const cosHalf = bisector ? dot3(bisector, axisIn) : 0;
+    if (!bisector || cosHalf <= 1e-3) {
+      // ~180° reversal: no meaningful corner geometry.
+      fallback();
+      return;
+    }
+
+    const distortion = applyDistortion(sample, options, bisector);
+    const miterLength = w / cosHalf;
+    const limit = MITER_LIMIT * w;
+    let style = joinStyle;
+    if (style === "miter" && miterLength > limit) {
+      style = "bevel";
+    }
+
+    if (style === "miter") {
+      addColumn(sample.x, sample.y, centerZ, tangent, bisector, distortion, miterLength, sample.arcLength);
+      return;
+    }
+
+    // The inner side is the one the path turns toward: where the incoming
+    // width axis points along the outgoing direction.
+    const innerIsLeft = dot3(axisIn, dirOut) > 0;
+    const innerSign = innerIsLeft ? 1 : -1;
+    const outerSign = -innerSign;
+    const innerPoint = add3(center, scale3(bisector, innerSign * Math.min(miterLength, limit)));
+
+    const outerOffsets = [];
+    if (style === "round") {
+      const steps = clamp(
+        Math.round((turn / (Math.PI / 2)) * ROUND_JOIN_STEPS_PER_QUARTER),
+        1,
+        ROUND_JOIN_MAX_STEPS
+      );
+      for (let step = 0; step <= steps; step++) {
+        const t = step / steps;
+        const swept = normalize3({
+          x: axisIn.x * (1 - t) + axisOut.x * t,
+          y: axisIn.y * (1 - t) + axisOut.y * t,
+          z: axisIn.z * (1 - t) + axisOut.z * t,
+        }) ?? bisector;
+        outerOffsets.push(scale3(swept, outerSign * w));
+      }
+    } else {
+      outerOffsets.push(scale3(axisIn, outerSign * w), scale3(axisOut, outerSign * w));
+    }
+
+    for (const offset of outerOffsets) {
+      const outerPoint = add3(center, offset);
+      addColumnPoints(
+        innerIsLeft ? innerPoint : outerPoint,
+        innerIsLeft ? outerPoint : innerPoint,
+        distortion,
+        sample.arcLength
+      );
+    }
+  };
+
+  // Round caps are approximated with a few extra columns whose half-width
+  // shrinks along a quarter circle, ending in a degenerate (zero-width) tip
+  // column. This keeps the whole stroke a regular N x 2 grid.
+  const addRoundCap = (sample, isStart) => {
+    const widthAxis = computeWidthAxis(sample, orientation, up, cameraPosition, baseZ);
+    const distortion = applyDistortion(sample, options, widthAxis);
+    const radius = Math.max(0, sample.width);
+    const direction = isStart ? -1 : 1;
+    const centerZ = baseZ + sample.z;
+
+    for (let step = 1; step <= ROUND_CAP_COLUMNS; step++) {
+      // Start caps are emitted tip-first so columns stay ordered along the path.
+      const k = isStart ? ROUND_CAP_COLUMNS + 1 - step : step;
+      const theta = (k / ROUND_CAP_COLUMNS) * (Math.PI / 2);
+      const along = Math.sin(theta) * radius * direction;
+      addColumn(
+        sample.x + sample.tx * along,
+        sample.y + sample.ty * along,
+        centerZ + sample.tz * along,
+        { x: sample.tx, y: sample.ty, z: sample.tz },
+        widthAxis,
+        distortion,
+        Math.cos(theta) * radius,
+        sample.arcLength + along
+      );
+    }
+  };
+
+  if (capStyle === "round") {
+    addRoundCap(working[0], true);
   }
 
-  for (let index = 0; index < stripIndices.length - 2; index += 2) {
-    const left = stripIndices[index];
-    const right = stripIndices[index + 1];
-    const nextLeft = stripIndices[index + 2];
-    const nextRight = stripIndices[index + 3];
-    mesh.indices.push(left, right, nextLeft, right, nextRight, nextLeft);
+  for (let index = 0; index < working.length; index++) {
+    addJoin(working[index], working[index - 1] ?? null, working[index + 1] ?? null);
   }
 
   if (capStyle === "round") {
-    addCap(mesh, stripSamples[0], stripSamples[0].width, true, opacity, tint);
-    addCap(mesh, stripSamples[stripSamples.length - 1], stripSamples[stripSamples.length - 1].width, false, opacity, tint);
+    addRoundCap(working[working.length - 1], false);
   }
 
-  const bounds = mesh.vertexCount
-    ? mesh.bounds
-    : null;
-
+  const rows = tube ? crossSection + 1 : 2;
   return {
-    positions: new Float32Array(mesh.positions),
-    uvs: new Float32Array(mesh.uvs),
-    colors: new Float32Array(mesh.colors),
-    indices: new Uint16Array(mesh.indices),
-    bounds,
+    columns,
+    rows,
+    crossSection,
     lineLength,
-    vertexCount: mesh.vertexCount,
+    arcMin: columns[0].arcLength,
+    arcMax: columns[columns.length - 1].arcLength,
+    vertexCount: columns.length * rows,
     renderedPointCount: transformed.length,
+    bounds: columns.length ? bounds : null,
+    minZ: columns.length ? minZ : 0,
+    maxZ: columns.length ? maxZ : 0,
   };
 }
 
-export function createPreviewPointsFromRect(rect, width) {
-  const left = toFiniteNumber(rect?.getLeft?.() ?? rect?.left, -64);
-  const top = toFiniteNumber(rect?.getTop?.() ?? rect?.top, -8);
-  const right = toFiniteNumber(rect?.getRight?.() ?? rect?.right, 64);
-  const bottom = toFiniteNumber(rect?.getBottom?.() ?? rect?.bottom, 8);
-  const midY = (top + bottom) * 0.5;
-  const thickness = Math.abs(bottom - top) * 0.5;
-
-  return [
-    makePoint(left, midY, thickness > 0 ? thickness : width),
-    makePoint(right, midY, thickness > 0 ? thickness : width),
-  ];
-}
-
-// Build a 2-point preview stroke from the instance's layout-space quad so the
-// editor preview tracks the instance position, rotation, size and scene-graph
-// parent transform (GetQuad() already returns final hierarchy-transformed coords).
-export function createPreviewPointsFromQuad(quad, fallbackWidth) {
-  if (!quad) {
-    return null;
+// Position of one mesh vertex for a column and row. Ribbons (rows = 2) use the
+// explicit left/right points. Tubes generate a ring of `crossSection` points
+// around the column centre (row `crossSection` repeats row 0 to close the seam
+// with its own texture coordinate). Returns { x, y, z, v01 } with v01 in [0,1].
+export function columnVertex(column, row, rows, crossSection) {
+  if (rows <= 2 || !column.ring) {
+    return row === 0
+      ? { x: column.lx, y: column.ly, z: column.lz, v01: 0 }
+      : { x: column.rx, y: column.ry, z: column.rz, v01: 1 };
   }
 
-  const read = (name) =>
-    typeof quad[name] === "function" ? toFiniteNumber(quad[name](), NaN) : NaN;
-  const tlx = read("getTlx");
-  const tly = read("getTly");
-  const trx = read("getTrx");
-  const try_ = read("getTry");
-  const brx = read("getBrx");
-  const bry = read("getBry");
-  const blx = read("getBlx");
-  const bly = read("getBly");
-
-  if (![tlx, tly, trx, try_, brx, bry, blx, bly].every(Number.isFinite)) {
-    return null;
-  }
-
-  const leftX = (tlx + blx) * 0.5;
-  const leftY = (tly + bly) * 0.5;
-  const rightX = (trx + brx) * 0.5;
-  const rightY = (try_ + bry) * 0.5;
-  const leftEdge = lengthOf(blx - tlx, bly - tly);
-  const thickness = leftEdge > 0 ? leftEdge * 0.5 : Math.max(0, toFiniteNumber(fallbackWidth, 0));
-
-  return [
-    makePoint(leftX, leftY, thickness),
-    makePoint(rightX, rightY, thickness),
-  ];
-}
-
-export function remapUvsToTexRect(uvs, texRect) {
-  if (!texRect || !uvs?.length) {
-    return uvs;
-  }
-
-  const left = toFiniteNumber(texRect.getLeft?.() ?? texRect.left, 0);
-  const top = toFiniteNumber(texRect.getTop?.() ?? texRect.top, 0);
-  const right = toFiniteNumber(texRect.getRight?.() ?? texRect.right, 1);
-  const bottom = toFiniteNumber(texRect.getBottom?.() ?? texRect.bottom, 1);
-  const width = right - left;
-  const height = bottom - top;
-  const remapped = new Float32Array(uvs.length);
-
-  // Linear remap into the source tex rect. U may exceed [0,1] when the stroke is
-  // longer than one tile; tiling relies on the texture's repeat wrap mode
-  // (enabled because the addon sets IsTiled, so the image is not sprite-sheeted).
-  for (let index = 0; index < uvs.length; index += 2) {
-    remapped[index] = left + uvs[index] * width;
-    remapped[index + 1] = top + uvs[index + 1] * height;
-  }
-
-  return remapped;
+  const ring = column.ring;
+  const t = row / crossSection;
+  const angle = t * Math.PI * 2;
+  const cosA = Math.cos(angle) * ring.radius;
+  const sinA = Math.sin(angle) * ring.radius;
+  return {
+    x: ring.cx + ring.wx * cosA + ring.bx * sinA + column.dx,
+    y: ring.cy + ring.wy * cosA + ring.by * sinA + column.dy,
+    z: ring.cz + ring.wz * cosA + ring.bz * sinA + column.dz,
+    v01: t,
+  };
 }

@@ -1,6 +1,6 @@
 export const config = {
   returnType: "number",
-  description: "Current distortion frequency.",
+  description: "The distortion frequency.",
   params: [],
 };
 
