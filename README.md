@@ -1,27 +1,14 @@
 <img src="./src/icon.svg" width="100" /><br>
 # Line Renderer
 <i>Draw a Sprite or Tiled Background as a line, rope or beam along a path of points using mesh distortion, in 2D or 3D.</i> <br>
-### Version 2.1.0.0
+### Version 2.1.0.1
 
-[<img src="https://placehold.co/200x50/4493f8/FFF?text=Download&font=montserrat" width="200"/>](https://github.com/SalmanShhh/C3Addon_Line-Renderer-2D/releases/download/salmanshh_line_renderer-2.1.0.0.c3addon/salmanshh_line_renderer-2.1.0.0.c3addon)
+[<img src="https://placehold.co/200x50/4493f8/FFF?text=Download&font=montserrat" width="200"/>](https://github.com/SalmanShhh/C3Addon_Line-Renderer-2D/releases/download/salmanshh_line_renderer-2.1.0.1.c3addon/salmanshh_line_renderer-2.1.0.1.c3addon)
 <br>
 <sub> [See all releases](https://github.com/SalmanShhh/C3Addon_Line-Renderer-2D/releases) </sub> <br>
 
-#### What's New in 2.1.0.0
-- **Added:** - Pin point to object and Pin points to objects: points follow instances (or one of their image points, including 3D shape faces) every tick, with a Once mode for a one-off move. Unpin point (-1 for all) and Is point pinned.
-- **Added:** - Setting or pinning a point past the end of the list grows the list, so per-IID loops work without setting the point count first.
-- **Added:** - Per-point width and height: a point's height is the line thickness there and its width is the texture width of the segment starting at it (0 automatic, a value fixes it so the image stretches with the segment). Set point size, Set size of all points, PointHeight, PointWidth and TextureLength.
-- **Added:** - With Auto-fit on, changing the object's height (editor, Set size, tween) scales the rope thickness to match.
-- **Added:** - Wave shapes (sine, triangle, sawtooth, reverse sawtooth, square) and negative wave periods to reverse direction.
-- **Added:** - Set line style (end caps, joins, cross-section points), Set facing (camera position or up vector) and Set performance (maximum drawn points, wave resolution, off-screen culling).
-- **Changed:** - Texture handling is left entirely to the host object. Construct clamps mesh texture co-ordinates to the object's own box, so Auto-fit now sizes the object as the unrolled rope (texture length by thickness at the line's centre). A Tiled Background tiles at its own image scale and scrolls with its own Set image offset; a Sprite stretches its frame. The Texture scroll speed property and actions were removed in favour of the host's image offset.
-- **Changed:** - Defaults are now Absolute co-ordinate space with Auto-fit on, so a pinned rope resizes its object to cover the line out of the box; the initial ribbon is placed on the object in layout co-ordinates.
-- **Changed:** - Properties Bar reduced to Initial point count, End caps, Facing, Auto-fit to line, Joins, Cross-section points and Enabled (always last). Co-ordinate space and the wave are runtime-only actions.
-- **Changed:** - Distortion is now the Wave, described like the Sine behavior: Set wave takes magnitude in pixels, wavelength in pixels, period in seconds, movement (horizontal, vertical, both, across the line, Z elevation) and shape; Set wave magnitude animates it. Replaces the distortion amplitude, frequency, speed, axis and resolution ACEs.
-- **Changed:** - ACE set consolidated to 23 actions, 7 conditions and 11 expressions: Add point, Insert point, Set point position and Set line take a Z elevation (the 3D variants are gone); Pin point to object absorbs Set point to object and Set point to image point; Pin points to objects absorbs Set points from objects; Set point size replaces the width, height, texture and rest-length actions; Set line between objects, Clear points, Fit object to line, the per-setting appearance and performance actions, Point exists, Is culled and the derived state expressions were removed.
-- **Changed:** - Point width parameters are now heights (full line thickness, like the object height) instead of half-widths.
-- **Fixed:** - Host set-up no longer depends on the _postCreate hook (falls back to the first tick), an action run before the first tick is no longer overwritten by the default ribbon, and mesh API errors are reported to the console once instead of being swallowed.
-- **Fixed:** - Tiled Background textures no longer stretch their last pixel column past the object's own repeat count.
+#### What's New in 2.1.0.1
+- **Changed:** - icon updated to reflect that its a behavior, following similar colour scheme I have for my behaviour addons.
 
 <sub>[View full changelog](#changelog)</sub>
 
@@ -131,6 +118,9 @@ npm run dev
 
 ---
 ## Changelog
+
+**2.1.0.1**
+- **Changed:** - icon updated to reflect that its a behavior, following similar colour scheme I have for my behaviour addons.
 
 **2.1.0.0**
 - **Added:** - Pin point to object and Pin points to objects: points follow instances (or one of their image points, including 3D shape faces) every tick, with a Once mode for a one-off move. Unpin point (-1 for all) and Is point pinned.
