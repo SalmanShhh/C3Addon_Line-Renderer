@@ -5,14 +5,7 @@ export const config = {
   displayText: "Set {my} co-ordinate space to {0}",
   description: "Set whether points are in layout co-ordinates (absolute) or relative to the object (relative).",
   params: [
-    {
-      id: "space",
-      name: "Co-ordinate space",
-      desc: "Absolute uses layout co-ordinates. Relative uses co-ordinates relative to the object's position, angle and size.",
-      type: "combo",
-      initialValue: "absolute",
-      items: [{ absolute: "Absolute" }, { relative: "Relative" }],
-    },
+    { id: "space", name: "Co-ordinate space", desc: "Absolute uses layout co-ordinates. Relative uses co-ordinates relative to the object's position, angle and size.", type: "combo", initialValue: "absolute", items: [{ absolute: "Absolute" }, { relative: "Relative" }] },
   ],
 };
 

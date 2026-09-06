@@ -6,6 +6,7 @@ import {
   END_CAP_KEYS,
   JOIN_STYLE_KEYS,
   RIBBON_FACING_KEYS,
+  WAVE_SHAPE_KEYS,
   buildStrokeColumns,
   clamp01,
   clonePoint,
@@ -17,13 +18,17 @@ import {
   getComboKey,
   makePoint,
   toCount,
+  textureDistanceAt,
   toFiniteNumber,
+  transformRelativePoint,
 } from "../shared/meshstrokeShared.js";
 
 // Hard cap on host mesh vertices (columns x rows) so a runaway point count or
 // a dense tube cannot allocate an enormous mesh. Longer paths are LOD-reduced.
 const MAX_MESH_VERTICES = 2048;
 const MAX_CROSS_SECTION = 32;
+// Largest point index an action may grow the list to.
+const MAX_POINTS = 4096;
 
 // Non-zero signed dimension, used when dividing by the host's width/height.
 function safeDimension(value, fallback = 1) {
@@ -50,20 +55,26 @@ export default function (parentClass) {
       // Property index order must match config.caw.js properties[].
       const properties = this._getInitProperties();
       this._initialPointCount = toCount(properties?.[0], 2);
-      this._coordSpace = getComboKey(properties?.[1], COORD_SPACE_KEYS, COORD_SPACE_KEYS[1]);
-      this._uvScrollSpeed = toFiniteNumber(properties?.[2], 0);
-      this._endCapStyle = getComboKey(properties?.[3], END_CAP_KEYS, END_CAP_KEYS[0]);
-      this._ribbonFacing = getComboKey(properties?.[4], RIBBON_FACING_KEYS, RIBBON_FACING_KEYS[0]);
-      this._distortAmplitude = Math.max(0, toFiniteNumber(properties?.[5], 0));
-      this._distortFrequency = Math.max(0, toFiniteNumber(properties?.[6], 1));
-      this._distortSpeed = toFiniteNumber(properties?.[7], 1);
-      this._distortAxis = getComboKey(properties?.[8], DISTORT_AXIS_KEYS, DISTORT_AXIS_KEYS[2]);
-      this._distortResolution = Math.max(1, Math.floor(toFiniteNumber(properties?.[9], 1)));
-      this._autoFit = !!properties?.[10];
-      this._joinStyle = getComboKey(properties?.[11], JOIN_STYLE_KEYS, JOIN_STYLE_KEYS[3]);
-      this._crossSection = this._clampCrossSection(properties?.[12]);
+      this._endCapStyle = getComboKey(properties?.[1], END_CAP_KEYS, END_CAP_KEYS[0]);
+      this._ribbonFacing = getComboKey(properties?.[2], RIBBON_FACING_KEYS, RIBBON_FACING_KEYS[0]);
+      this._autoFit = properties?.[3] === undefined ? true : !!properties[3];
+      this._joinStyle = getComboKey(properties?.[4], JOIN_STYLE_KEYS, JOIN_STYLE_KEYS[3]);
+      this._crossSection = this._clampCrossSection(properties?.[5]);
       // "Enabled" is always the last property, like the built-in behaviors.
-      this._enabled = properties?.[13] === undefined ? true : !!properties[13];
+      this._enabled = properties?.[6] === undefined ? true : !!properties[6];
+
+      // Runtime-only settings (actions), kept out of the Properties Bar so a new
+      // user can get a rope on screen without touching them.
+      this._coordSpace = COORD_SPACE_KEYS[0]; // absolute
+      // Wave (distortion), in Sine-behavior terms: magnitude in pixels,
+      // wavelength in pixels per cycle, period in seconds per cycle (0 = the
+      // wave stands still), movement = which way points are pushed, shape.
+      this._waveMagnitude = 0;
+      this._wavelength = 100;
+      this._wavePeriod = 1;
+      this._waveMovement = DISTORT_AXIS_KEYS[3]; // across the line (perpendicular)
+      this._waveShape = WAVE_SHAPE_KEYS[0];
+      this._distortResolution = 1;
 
       // Derived from the host in _postCreate(): the object's height is the line
       // thickness, so path-building actions use half of it as the point width.
@@ -75,12 +86,17 @@ export default function (parentClass) {
       // so ACEs that run before _postCreate() have something valid to edit; the
       // box-spanning default is created once the host is ready.
       this._points = createInitialPoints(this._initialPointCount, this._defaultWidth);
+      this._pointsTouched = false;
+      // Per-point UID of a pinned instance (or null): pinned points follow
+      // their instance every tick.
+      this._pinnedUids = [];
+      // Per-point image point / face followed by a pinned point (or null = origin).
+      this._pinnedAttach = [];
       this._relativeBaseWidth = 1;
       this._relativeBaseHeight = 1;
       this._hostReady = false;
 
       this._built = null;
-      this._uvScrollOffset = 0;
       this._distortPhase = 0;
       this._meshDirty = true;
       this._meshRebuildCount = 0;
@@ -101,6 +117,10 @@ export default function (parentClass) {
       this._manualCamera = null;
       // World up vector used by the "up_vector" ribbon facing.
       this._upVector = { x: 0, y: 0, z: 1 };
+      // Box size last written by auto-fit (0 = none yet). Used to notice when
+      // the user changes the object's height so the rope thickness can follow.
+      this._fitWidth = 0;
+      this._fitHeight = 0;
       // Size of the mesh currently created on the host (0 columns = none).
       this._hostMeshColumns = 0;
       this._hostMeshRows = 0;
@@ -112,8 +132,15 @@ export default function (parentClass) {
     }
 
     _postCreate() {
+      this._initFromHost();
+    }
+
+    // One-time setup that needs the host instance. Called from _postCreate(),
+    // and as a fallback from the first tick / first host-dependent ACE in case
+    // the runtime does not call _postCreate().
+    _initFromHost() {
       const inst = this.instance;
-      if (!inst) {
+      if (this._hostReady || !inst) {
         return;
       }
 
@@ -123,17 +150,122 @@ export default function (parentClass) {
       this._relativeBaseWidth = safeDimension(inst.width, 1);
       this._relativeBaseHeight = safeDimension(inst.height, 1);
       this._defaultWidth = Math.abs(this._relativeBaseHeight) * 0.5;
-      this._points = createBoxSpanningPoints(
-        this._initialPointCount,
-        inst.width,
-        inst.height,
-        inst.originX,
-        inst.originY,
-        this._defaultWidth
-      );
-      this._lastRenderedPointCount = this._points.length;
+      // Only seed the default ribbon if no ACE has already shaped the line
+      // (an action may run before the first tick).
+      if (!this._pointsTouched) {
+        const local = createBoxSpanningPoints(
+          this._initialPointCount,
+          inst.width,
+          inst.height,
+          inst.originX,
+          inst.originY,
+          this._defaultWidth
+        );
+        // In absolute space points are layout co-ordinates: place the initial
+        // ribbon on the object by running the local points through its transform.
+        this._points =
+          this._coordSpace === "relative"
+            ? local
+            : local.map((point) => {
+                const world = transformRelativePoint(point, {
+                  x: inst.x, y: inst.y, angle: inst.angle, scaleX: 1, scaleY: 1,
+                });
+                return makePoint(world.x, world.y, point.width, toFiniteNumber(inst.totalZ, 0) + point.z);
+              });
+        this._lastRenderedPointCount = this._points.length;
+      }
       this._hostReady = true;
       this._markMeshDirty();
+    }
+
+    // ---------------------------------------------------------------------
+    // Pinned points (follow instances automatically)
+    // ---------------------------------------------------------------------
+
+    _getInstanceUid(target) {
+      const uid = target?.uid;
+      return Number.isInteger(uid) ? uid : null;
+    }
+
+    // attach (optional): { face, name } image point to follow on the instance.
+    _pinPoint(index, target, attach = null) {
+      const uid = this._getInstanceUid(target);
+      if (uid === null || !this._ensurePointIndex(index)) {
+        return false;
+      }
+      this._pinnedUids[index] = uid;
+      this._pinnedAttach[index] = attach && (attach.name !== undefined && attach.name !== 0 && attach.name !== "0" && attach.name !== "" || (attach.face && attach.face !== "none"))
+        ? { face: attach.face ?? "none", name: attach.name }
+        : null;
+      this._applyPinnedPoint(index, target);
+      this._markMeshDirty();
+      return true;
+    }
+
+    _unpinPoint(index) {
+      if (index >= 0 && index < this._pinnedUids.length) {
+        this._pinnedUids[index] = null;
+        this._pinnedAttach[index] = null;
+      }
+    }
+
+    _unpinAllPoints() {
+      this._pinnedUids = [];
+      this._pinnedAttach = [];
+    }
+
+    _isPointPinned(index) {
+      return this._isValidPointIndex(index) && Number.isInteger(this._pinnedUids[index]);
+    }
+
+    _resolvePinnedInstance(uid) {
+      try {
+        return this.runtime?.getInstanceByUid?.(uid) ?? null;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    // Copy a target instance's position into a point (in point space).
+    _applyPinnedPoint(index, target) {
+      const point = this._points[index];
+      if (!point || !target) {
+        return false;
+      }
+      const attach = this._pinnedAttach[index];
+      const position = attach
+        ? this._layoutToPointSpace(...this._getAttachPosition(target, attach))
+        : this._instanceToPointSpace(target);
+      if (point.x === position.x && point.y === position.y && point.z === position.z) {
+        return false;
+      }
+      point.x = position.x;
+      point.y = position.y;
+      point.z = position.z;
+      return true;
+    }
+
+    // Every tick: move pinned points to their instances. A destroyed instance
+    // unpins its point, which keeps its last position.
+    _updatePinnedPoints() {
+      let changed = false;
+      for (let index = 0; index < this._pinnedUids.length && index < this._points.length; index++) {
+        const uid = this._pinnedUids[index];
+        if (!Number.isInteger(uid)) {
+          continue;
+        }
+        const target = this._resolvePinnedInstance(uid);
+        if (!target) {
+          this._pinnedUids[index] = null;
+          continue;
+        }
+        if (this._applyPinnedPoint(index, target)) {
+          changed = true;
+        }
+      }
+      if (changed) {
+        this._markMeshDirty();
+      }
     }
 
     _trigger(method) {
@@ -308,6 +440,31 @@ export default function (parentClass) {
       this._markMeshDirty();
     }
 
+    _setWaveMagnitude(magnitude) {
+      this._waveMagnitude = Math.max(0, toFiniteNumber(magnitude, 0));
+      this._markMeshDirty();
+    }
+
+    _setWavelength(wavelength) {
+      this._wavelength = Math.max(1e-4, toFiniteNumber(wavelength, 100));
+      this._markMeshDirty();
+    }
+
+    _setWavePeriod(period) {
+      this._wavePeriod = toFiniteNumber(period, 0);
+      this._markMeshDirty();
+    }
+
+    _setWaveMovement(movement) {
+      this._waveMovement = getComboKey(movement, DISTORT_AXIS_KEYS, this._waveMovement);
+      this._markMeshDirty();
+    }
+
+    _setWaveShape(shape) {
+      this._waveShape = getComboKey(shape, WAVE_SHAPE_KEYS, this._waveShape);
+      this._markMeshDirty();
+    }
+
     _setEnabled(enabled) {
       const next = !!enabled;
       if (next === this._enabled) {
@@ -324,6 +481,16 @@ export default function (parentClass) {
 
     _markMeshDirty() {
       this._meshDirty = true;
+      this._pointsTouched = true;
+    }
+
+    // Report a host mesh failure once, so a silent no-op is diagnosable.
+    _reportMeshError(stage, error) {
+      if (this._meshErrorReported) {
+        return;
+      }
+      this._meshErrorReported = true;
+      console.error(`[Line Renderer] ${stage} failed on the host object:`, error);
     }
 
     // ---------------------------------------------------------------------
@@ -351,6 +518,9 @@ export default function (parentClass) {
     }
 
     _tick2() {
+      if (!this._hostReady) {
+        this._initFromHost();
+      }
       if (!this._enabled || !this._hostReady) {
         return;
       }
@@ -359,9 +529,11 @@ export default function (parentClass) {
         return;
       }
 
+      this._updatePinnedPoints();
+      this._adoptHostHeight();
+
       const dt = this._getDt();
-      const distortionActive = this._distortAmplitude > 0;
-      const uvActive = this._uvScrollSpeed !== 0;
+      const distortionActive = this._waveMagnitude > 0;
 
       this._lastTickRebuilt = false;
 
@@ -371,12 +543,9 @@ export default function (parentClass) {
         this._meshDirty = true;
       }
 
-      if (uvActive) {
-        this._uvScrollOffset += this._uvScrollSpeed * dt;
-      }
-
-      if (distortionActive) {
-        this._distortPhase += this._distortSpeed * dt;
+      if (distortionActive && this._wavePeriod !== 0) {
+        // One full cycle per period: the wave travels one wavelength per period.
+        this._distortPhase += ((Math.PI * 2) / this._wavePeriod) * dt;
       }
 
       this._isCulled = this._frustumCullingEnabled && this._shouldCull();
@@ -384,7 +553,7 @@ export default function (parentClass) {
         return;
       }
 
-      if (!this._meshDirty && !distortionActive && !uvActive) {
+      if (!this._meshDirty && !distortionActive) {
         return;
       }
 
@@ -453,7 +622,7 @@ export default function (parentClass) {
     // Move one point to a layout-space position (converted to point space).
     _setPointToLayout(index, x, y, z) {
       const pointIndex = this._coercePointIndex(index);
-      if (!this._isValidPointIndex(pointIndex)) {
+      if (!this._ensurePointIndex(pointIndex)) {
         return false;
       }
       const position = this._layoutToPointSpace(x, y, z);
@@ -520,10 +689,11 @@ export default function (parentClass) {
         points: this._points,
         renderLod: this._getEffectiveRenderLod(),
         distortResolution: this._distortResolution,
-        distortAmplitude: this._distortAmplitude,
-        distortFrequency: this._distortFrequency,
+        distortAmplitude: this._waveMagnitude,
+        distortFrequency: (Math.PI * 2) / Math.max(1e-4, this._wavelength),
         distortPhase: this._distortPhase,
-        distortAxis: this._distortAxis,
+        distortAxis: this._waveMovement,
+        waveShape: this._waveShape,
         endCapStyle: this._endCapStyle,
         joinStyle: this._getEffectiveJoinStyle(),
         crossSection: this._crossSection,
@@ -589,6 +759,8 @@ export default function (parentClass) {
     }
 
     _releaseHostMesh() {
+      this._fitWidth = 0;
+      this._fitHeight = 0;
       if (!this._hostMeshColumns) {
         return;
       }
@@ -601,41 +773,158 @@ export default function (parentClass) {
       }
     }
 
-    // Texture mapping is derived entirely from the host. Mesh texture
-    // coordinates are normalised to the host's own texture rect, so u/v in
-    // [0,1] reproduce exactly what the undistorted object shows:
-    // - Sprite: [0,1] is the current animation frame on its spritesheet, so u
-    //   must stay in range. The frame is stretched once along the whole line;
-    //   UV scrolling is not possible.
-    // - Tiled Background: [0,1] is the object's own tiling area, i.e.
-    //   width / (imageWidth * imageScale) repeats. Mapping u = distance / width
-    //   keeps the image at its native tile density along the line (one repeat
-    //   per imageWidth * imageScaleX pixels of stroke), so the host's Image
-    //   scale property controls the tiling. v = 0..1 across the line shows the
-    //   same tiling the object's height would. Repeat wrap allows u outside
-    //   [0,1], which is also what makes UV scrolling possible.
-    _getHostUvMapping(built) {
+    // Host kind, for the debugger only: the mapping below is the same for every
+    // host because each of them draws its own content across the object's box.
+    _getHostKind() {
       const inst = this.instance;
-      const arcMin = built.arcMin;
-      const arcSpan = Math.max(1e-6, built.arcMax - built.arcMin);
-      const isTiled =
-        typeof inst?.imageScaleX === "number" && typeof inst?.imageWidth === "number";
-
-      if (!isTiled) {
-        return {
-          mode: "stretch",
-          vMax: 1,
-          mapU: (arcLength) => clamp01((arcLength - arcMin) / arcSpan),
-        };
+      if (!inst) {
+        return "none";
       }
+      if ("animationFrame" in inst) {
+        return "sprite";
+      }
+      if (typeof inst.imageScaleX === "number" && typeof inst.imageWidth === "number") {
+        return "tiled background";
+      }
+      return "other";
+    }
 
-      const width = Math.max(1e-4, Math.abs(toFiniteNumber(inst.width, 1)));
-      const scroll = this._uvScrollOffset;
+    // Texture mapping. Construct clamps mesh texture co-ordinates to [0,1],
+    // and [0,1] is whatever the host draws across its own box: a Sprite frame or
+    // a Tiled Background's tiling (image scale, offset, angle, randomisation and
+    // all). The behavior never touches those
+    // settings. Instead u runs from 0 at the start of the line to 1 at the end
+    // in TEXTURE distance (tile segments 1:1, stretch segments frozen at their
+    // rest length), and Auto-fit sizes the box to that texture length by the
+    // line thickness: the object is the unrolled rope. So a Tiled Background
+    // tiles at exactly the density its image scale says and its Set image offset
+    // scrolls the rope 1:1; a Sprite stretches its frame along the rope.
+    _getHostUvMapping(built) {
+      const texMin = built.texMin;
+      const texSpan = Math.max(1e-6, built.texMax - built.texMin);
       return {
-        mode: "tile",
+        mode: this._getHostKind(),
         vMax: 1,
-        mapU: (arcLength) => (arcLength + scroll) / width,
+        mapU: (arcLength) => clamp01((textureDistanceAt(built.textureMap, arcLength) - texMin) / texSpan),
       };
+    }
+
+    // While auto-fit owns the box (absolute space), the object's height is also
+    // an input: if the user changed it since the last fit (editor, Set size,
+    // a tween), scale every point's height by the same factor so the rope
+    // thickness follows the object, like resizing a plain Tiled Background.
+    _adoptHostHeight() {
+      if (!this._autoFit || this._coordSpace !== "absolute" || !(this._fitHeight > 0)) {
+        return;
+      }
+      const height = Math.abs(toFiniteNumber(this.instance?.height, this._fitHeight));
+      if (!(height > 0) || Math.abs(height - this._fitHeight) < 1e-6) {
+        return;
+      }
+      const factor = height / this._fitHeight;
+      for (const point of this._points) {
+        point.width *= factor;
+      }
+      this._defaultWidth *= factor;
+      this._fitHeight = height;
+      this._markMeshDirty();
+    }
+
+    // Nominal thickness of the line: twice the mean point width.
+    _getMeanThickness() {
+      if (!this._points.length) {
+        return Math.max(1e-4, this._defaultWidth * 2);
+      }
+      let sum = 0;
+      for (const point of this._points) {
+        sum += Math.max(0, toFiniteNumber(point.width, 0));
+      }
+      return Math.max(1e-4, (2 * sum) / this._points.length);
+    }
+
+    // ---------------------------------------------------------------------
+    // Per-point texture stretch
+    // ---------------------------------------------------------------------
+
+    _segmentLength(index) {
+      const a = this._points[index];
+      const b = this._points[index + 1];
+      if (!a || !b) {
+        return 0;
+      }
+      return Math.hypot(b.x - a.x, b.y - a.y, (b.z ?? 0) - (a.z ?? 0));
+    }
+
+    // stretch: the segment starting at the point keeps a fixed texture length.
+    // Its rest length is captured from the current segment length unless one
+    // was set explicitly (restLength > 0 already or given).
+    _setPointStretch(index, stretch, restLength = null) {
+      if (!this._ensurePointIndex(index)) {
+        return false;
+      }
+      const point = this._points[index];
+      point.stretch = !!stretch;
+      if (restLength !== null) {
+        point.restLength = Math.max(0, toFiniteNumber(restLength, 0));
+      } else if (point.stretch) {
+        point.restLength = this._segmentLength(index);
+      } else {
+        point.restLength = 0;
+      }
+      this._markMeshDirty();
+      return true;
+    }
+
+    // Point "height" = full line thickness at the point (stored as half-width).
+    _setPointHeight(index, height) {
+      if (!this._ensurePointIndex(index)) {
+        return false;
+      }
+      this._points[index].width = Math.max(0, toFiniteNumber(height, 0)) * 0.5;
+      this._markMeshDirty();
+      return true;
+    }
+
+    // Point "width" = texture width of the segment starting at the point. A
+    // positive width fixes it (the segment stretches the image to that width);
+    // 0 means automatic, i.e. the segment's actual length (Tile).
+    _setPointWidth(index, width) {
+      if (!this._ensurePointIndex(index)) {
+        return false;
+      }
+      const point = this._points[index];
+      const value = Math.max(0, toFiniteNumber(width, 0));
+      point.restLength = value;
+      point.stretch = value > 0;
+      this._markMeshDirty();
+      return true;
+    }
+
+    // Combined size setter used by the ACEs: -1 keeps a value.
+    _setPointSize(index, width, height) {
+      if (!this._ensurePointIndex(index)) {
+        return false;
+      }
+      const w = toFiniteNumber(width, -1);
+      const h = toFiniteNumber(height, -1);
+      if (h >= 0) {
+        this._points[index].width = h * 0.5;
+      }
+      if (w >= 0) {
+        const point = this._points[index];
+        point.restLength = w;
+        point.stretch = w > 0;
+      }
+      this._markMeshDirty();
+      return true;
+    }
+
+    _getPointWidth(index) {
+      const point = this._points[index];
+      if (!point) {
+        return 0;
+      }
+      return point.stretch && point.restLength > 0 ? point.restLength : this._segmentLength(index);
     }
 
     // Write the layout-space columns into the host mesh. Mesh point x/y are
@@ -663,9 +952,10 @@ export default function (parentClass) {
           this._hostMeshColumns = columns.length;
           this._hostMeshRows = rows;
         }
-      } catch (_error) {
+      } catch (error) {
         this._hostMeshColumns = 0;
         this._hostMeshRows = 0;
+        this._reportMeshError("createMesh", error);
         return;
       }
 
@@ -708,70 +998,45 @@ export default function (parentClass) {
             write(index, row, vertex.x, vertex.y, vertex.z, u, vertex.v01 * uv.vMax);
           }
         }
-      } catch (_error) {
+      } catch (error) {
         this._hostMeshColumns = 0;
         this._hostMeshRows = 0;
+        this._reportMeshError("setMeshPoint", error);
       }
     }
 
     // Absolute space: the host is a pure canvas (as in the Trail Renderer
-    // pattern). Move and resize it so its box exactly covers the stroke, keep
-    // its 2D angle (bounds are measured in the host's rotated frame), clear any
-    // 3D rotation so mesh points are written in layout space, and drop the
-    // host's own Z to the lowest vertex so Z sorting matches the line and all
-    // mesh Z offsets stay >= 0. Keeps Construct's bounding box, on-screen
-    // culling and collision polygon in step with the line.
+    // pattern), sized as the UNROLLED rope: width = texture length, height =
+    // line thickness, centred on the line's bounds with no rotation. Because
+    // mesh texture co-ordinates span exactly the object's box, this makes a
+    // Tiled Background tile at the density its own image scale says, lets its
+    // image offset scroll the rope 1:1, all without the behavior touching any
+    // image setting. The host's
+    // own Z is lowered to the lowest vertex so Z sorting matches the line and
+    // mesh Z offsets stay >= 0, and any 3D rotation is cleared so mesh points
+    // are written in layout space.
     _fitHostToColumns(built) {
       const inst = this.instance;
       const columns = built?.columns ?? [];
-      if (!inst || !columns.length) {
+      if (!inst || !columns.length || !built.bounds) {
         return;
       }
 
-      const x = toFiniteNumber(inst.x, 0);
-      const y = toFiniteNumber(inst.y, 0);
-      const angle = toFiniteNumber(inst.angle, 0);
-      const cosAngle = Math.cos(angle);
-      const sinAngle = Math.sin(angle);
-      let minX = Number.POSITIVE_INFINITY;
-      let minY = Number.POSITIVE_INFINITY;
-      let maxX = Number.NEGATIVE_INFINITY;
-      let maxY = Number.NEGATIVE_INFINITY;
-
-      const include = (wx, wy) => {
-        const dx = wx - x;
-        const dy = wy - y;
-        const localX = dx * cosAngle + dy * sinAngle;
-        const localY = -dx * sinAngle + dy * cosAngle;
-        minX = Math.min(minX, localX);
-        minY = Math.min(minY, localY);
-        maxX = Math.max(maxX, localX);
-        maxY = Math.max(maxY, localY);
-      };
-
-      const rows = built.rows;
-      for (const column of columns) {
-        for (let row = 0; row < rows; row++) {
-          const vertex = columnVertex(column, row, rows, built.crossSection);
-          include(vertex.x, vertex.y);
-        }
-      }
-
-      const width = Math.max(1, maxX - minX);
-      const height = Math.max(1, maxY - minY);
+      const width = Math.max(1, built.texMax - built.texMin);
+      const height = Math.max(1, this._getMeanThickness());
+      const centerX = (built.bounds.left + built.bounds.right) * 0.5;
+      const centerY = (built.bounds.top + built.bounds.bottom) * 0.5;
       const originX = toFiniteNumber(inst.originX, 0.5);
       const originY = toFiniteNumber(inst.originY, 0.5);
-      // Where the origin sits inside the new local box, then back to layout space.
-      const originLocalX = minX + originX * width;
-      const originLocalY = minY + originY * height;
-      const newX = x + originLocalX * cosAngle - originLocalY * sinAngle;
-      const newY = y + originLocalX * sinAngle + originLocalY * cosAngle;
 
       try {
+        inst.angle = 0;
         inst.width = width;
         inst.height = height;
-        inst.x = newX;
-        inst.y = newY;
+        inst.x = centerX + (originX - 0.5) * width;
+        inst.y = centerY + (originY - 0.5) * height;
+        this._fitWidth = width;
+        this._fitHeight = height;
       } catch (_error) {
         // Host may not allow resizing; the mesh still renders relative to it.
       }
@@ -787,8 +1052,7 @@ export default function (parentClass) {
         // Z not writable on this host.
       }
 
-      // Clear any 3D rotation so the normalised mesh coordinates are layout
-      // space (feature-detected: r496+ 3D rotation API).
+      // Clear any 3D rotation (feature-detected: r496+ 3D rotation API).
       try {
         if (typeof inst.setQuaternion === "function") {
           const q = typeof inst.getQuaternion === "function" ? inst.getQuaternion() : null;
@@ -874,6 +1138,27 @@ export default function (parentClass) {
       return index >= 0 && index < this._points.length;
     }
 
+    // Point-setting actions may address an index past the end of the list; the
+    // list grows to include it so "Set point PointA.IID ..." in a For each just
+    // works. Gap points are placed on the current last point so no stray
+    // segment shoots off to the origin. Returns false for negative or absurd
+    // indices.
+    _ensurePointIndex(index) {
+      if (!Number.isInteger(index) || index < 0 || index >= MAX_POINTS) {
+        return false;
+      }
+      if (index < this._points.length) {
+        return true;
+      }
+      const last = this._points[this._points.length - 1] ?? this._newPoint(0, 0);
+      while (this._points.length <= index) {
+        this._points.push(this._newPoint(last.x, last.y, this._defaultWidth, last.z));
+      }
+      this._markMeshDirty();
+      this._trigger("OnPointCountChanged");
+      return true;
+    }
+
     _newPoint(x, y, width = this._defaultWidth, z = 0) {
       return makePoint(x, y, width, z);
     }
@@ -921,6 +1206,9 @@ export default function (parentClass) {
         }
       } else {
         this._points.length = nextCount;
+        if (this._pinnedUids.length > nextCount) {
+          this._pinnedUids.length = nextCount;
+        }
       }
 
       this._markMeshDirty();
@@ -928,10 +1216,41 @@ export default function (parentClass) {
       return true;
     }
 
-    _replacePoints(points, triggerPointCountChanged = false) {
+    // Insert / remove bookkeeping shared by the point ACEs so pins stay aligned
+    // with their points.
+    _insertPointAt(index, point) {
+      const insertAt = Math.max(0, Math.min(this._points.length, index));
+      this._points.splice(insertAt, 0, point);
+      if (this._pinnedUids.length > insertAt) {
+        this._pinnedUids.splice(insertAt, 0, null);
+        this._pinnedAttach.splice(insertAt, 0, null);
+      }
+      this._markMeshDirty();
+      this._trigger("OnPointCountChanged");
+    }
+
+    _removePointAt(index) {
+      if (!this._isValidPointIndex(index) || this._points.length <= 2) {
+        return false;
+      }
+      this._points.splice(index, 1);
+      if (this._pinnedUids.length > index) {
+        this._pinnedUids.splice(index, 1);
+        this._pinnedAttach.splice(index, 1);
+      }
+      this._markMeshDirty();
+      this._trigger("OnPointCountChanged");
+      return true;
+    }
+
+    // Replacing the whole point list drops any pins (the new points are not
+    // the pinned ones) unless the caller supplies matching pins.
+    _replacePoints(points, triggerPointCountChanged = false, pinnedUids = null) {
       const previousCount = this._points.length;
       this._points =
         points.length >= 2 ? points.map(clonePoint) : createInitialPoints(2, this._defaultWidth);
+      this._pinnedUids = Array.isArray(pinnedUids) ? pinnedUids.slice(0, this._points.length) : [];
+      this._pinnedAttach = [];
       this._markMeshDirty();
       if (triggerPointCountChanged && previousCount !== this._points.length) {
         this._trigger("OnPointCountChanged");
@@ -1058,18 +1377,26 @@ export default function (parentClass) {
             { name: "$enabled", value: this._enabled },
             { name: "$coordSpace", value: this._coordSpace },
             { name: "$pointCount", value: this._points.length },
+            { name: "$pinnedPoints", value: this._pinnedUids.filter((uid) => Number.isInteger(uid)).length },
+            { name: "$hostReady", value: this._hostReady },
+            { name: "$meshError", value: this._meshErrorReported ? "see console" : "none" },
             { name: "$renderedPointCount", value: this._lastRenderedPointCount },
             { name: "$meshColumns", value: this._hostMeshColumns },
             { name: "$vertexCount", value: this._lastVertexCount },
             { name: "$lineLength", value: this._lastLineLength },
             { name: "$textureMapping", value: this._lastUvMode || "(host not meshed yet)" },
+            { name: "$textureLength", value: this._built ? this._built.texMax - this._built.texMin : 0 },
+            { name: "$stretchPoints", value: this._points.filter((p) => p.stretch).length },
             { name: "$endCapStyle", value: this._endCapStyle },
             { name: "$joinStyle", value: this._getEffectiveJoinStyle() },
             { name: "$crossSection", value: this._isTube() ? `${this._crossSection} (tube)` : "2 (ribbon)" },
             { name: "$meshRows", value: this._hostMeshRows },
-            { name: "$uvScrollOffset", value: this._uvScrollOffset },
-            { name: "$distortAmplitude", value: this._distortAmplitude },
-            { name: "$distortResolution", value: this._distortResolution },
+            { name: "$waveMagnitude", value: this._waveMagnitude },
+            { name: "$wavelength", value: this._wavelength },
+            { name: "$wavePeriod", value: this._wavePeriod },
+            { name: "$waveMovement", value: this._waveMovement },
+            { name: "$waveShape", value: this._waveShape },
+            { name: "$waveResolution", value: this._distortResolution },
             { name: "$renderLOD", value: this._renderLOD || "off" },
             { name: "$autoFit", value: this._autoFit },
             { name: "$ribbonFacing", value: this._ribbonFacing },
@@ -1099,14 +1426,13 @@ export default function (parentClass) {
         coordSpace: this._coordSpace,
         relativeBaseWidth: this._relativeBaseWidth,
         relativeBaseHeight: this._relativeBaseHeight,
-        uvScrollOffset: this._uvScrollOffset,
         distortPhase: this._distortPhase,
-        distortAmplitude: this._distortAmplitude,
-        distortFrequency: this._distortFrequency,
-        distortSpeed: this._distortSpeed,
-        distortAxis: this._distortAxis,
+        waveMagnitude: this._waveMagnitude,
+        wavelength: this._wavelength,
+        wavePeriod: this._wavePeriod,
+        waveMovement: this._waveMovement,
+        waveShape: this._waveShape,
         distortResolution: this._distortResolution,
-        uvScrollSpeed: this._uvScrollSpeed,
         endCapStyle: this._endCapStyle,
         joinStyle: this._joinStyle,
         crossSection: this._crossSection,
@@ -1116,6 +1442,8 @@ export default function (parentClass) {
         autoFit: this._autoFit,
         manualCamera: this._manualCamera ? [...this._manualCamera] : null,
         upVector: [this._upVector.x, this._upVector.y, this._upVector.z],
+        pinnedUids: this._pinnedUids.map((uid) => (Number.isInteger(uid) ? uid : null)),
+        pinnedAttach: this._pinnedAttach.map((a) => (a ? { face: a.face, name: a.name } : null)),
       };
     }
 
@@ -1127,14 +1455,13 @@ export default function (parentClass) {
       this._coordSpace = getComboKey(o?.coordSpace, COORD_SPACE_KEYS, this._coordSpace);
       this._relativeBaseWidth = safeDimension(o?.relativeBaseWidth, this._relativeBaseWidth);
       this._relativeBaseHeight = safeDimension(o?.relativeBaseHeight, this._relativeBaseHeight);
-      this._uvScrollOffset = toFiniteNumber(o?.uvScrollOffset, 0);
       this._distortPhase = toFiniteNumber(o?.distortPhase, 0);
-      this._distortAmplitude = Math.max(0, toFiniteNumber(o?.distortAmplitude, this._distortAmplitude));
-      this._distortFrequency = Math.max(0, toFiniteNumber(o?.distortFrequency, this._distortFrequency));
-      this._distortSpeed = toFiniteNumber(o?.distortSpeed, this._distortSpeed);
-      this._distortAxis = getComboKey(o?.distortAxis, DISTORT_AXIS_KEYS, this._distortAxis);
+      this._waveMagnitude = Math.max(0, toFiniteNumber(o?.waveMagnitude, this._waveMagnitude));
+      this._wavelength = Math.max(1e-4, toFiniteNumber(o?.wavelength, this._wavelength));
+      this._wavePeriod = toFiniteNumber(o?.wavePeriod, this._wavePeriod);
+      this._waveMovement = getComboKey(o?.waveMovement, DISTORT_AXIS_KEYS, this._waveMovement);
+      this._waveShape = getComboKey(o?.waveShape, WAVE_SHAPE_KEYS, this._waveShape);
       this._distortResolution = Math.max(1, Math.floor(toFiniteNumber(o?.distortResolution, this._distortResolution)));
-      this._uvScrollSpeed = toFiniteNumber(o?.uvScrollSpeed, this._uvScrollSpeed);
       this._defaultWidth = Math.abs(this._relativeBaseHeight) * 0.5;
       this._endCapStyle = getComboKey(o?.endCapStyle, END_CAP_KEYS, this._endCapStyle);
       this._joinStyle = getComboKey(o?.joinStyle, JOIN_STYLE_KEYS, this._joinStyle);
@@ -1150,12 +1477,21 @@ export default function (parentClass) {
       if (Array.isArray(o?.upVector) && o.upVector.length >= 3) {
         this._setUpVector(o.upVector[0], o.upVector[1], o.upVector[2]);
       }
+      this._pinnedUids = Array.isArray(o?.pinnedUids)
+        ? o.pinnedUids.slice(0, this._points.length).map((uid) => (Number.isInteger(uid) ? uid : null))
+        : [];
+      this._pinnedAttach = Array.isArray(o?.pinnedAttach)
+        ? o.pinnedAttach.slice(0, this._points.length).map((a) => (a && typeof a === "object" ? { face: a.face ?? "none", name: a.name } : null))
+        : [];
+      this._pointsTouched = true;
       this._camera = undefined;
 
       // Construct restores the host's own mesh with the savegame, but we own it:
       // recreate it from our state on the next tick.
       this._hostMeshColumns = 0;
       this._hostMeshRows = 0;
+      this._fitWidth = 0;
+      this._fitHeight = 0;
       this._built = null;
       this._lastTransformSig = null;
       this._hostReady = !!this.instance;
@@ -1199,12 +1535,6 @@ export default function (parentClass) {
         : 0;
     }
 
-    MeshGetPointWidth(index) {
-      return this._isValidPointIndex(this._coercePointIndex(index))
-        ? this._points[this._coercePointIndex(index)].width
-        : 0;
-    }
-
     get MeshLineLength() {
       return this._lastLineLength;
     }
@@ -1225,24 +1555,43 @@ export default function (parentClass) {
       return this._distortResolution;
     }
 
-    get MeshDistortAmplitude() {
-      return this._distortAmplitude;
+    get MeshWaveMagnitude() {
+      return this._waveMagnitude;
     }
 
-    get MeshDistortFrequency() {
-      return this._distortFrequency;
+    get MeshWavelength() {
+      return this._wavelength;
     }
 
-    get MeshDistortSpeed() {
-      return this._distortSpeed;
+    get MeshWavePeriod() {
+      return this._wavePeriod;
     }
 
-    get MeshUVScrollSpeed() {
-      return this._uvScrollSpeed;
+    get MeshWaveMovement() {
+      return this._waveMovement;
     }
 
-    get MeshUVScrollOffset() {
-      return this._uvScrollOffset;
+    get MeshWaveShape() {
+      return this._waveShape;
+    }
+
+    get MeshTextureLength() {
+      return this._built ? this._built.texMax - this._built.texMin : 0;
+    }
+
+    MeshGetPointTextureWidth(index) {
+      const pointIndex = this._coercePointIndex(index);
+      return this._isValidPointIndex(pointIndex) ? this._getPointWidth(pointIndex) : 0;
+    }
+
+    MeshGetPointHeight(index) {
+      const pointIndex = this._coercePointIndex(index);
+      return this._isValidPointIndex(pointIndex) ? this._points[pointIndex].width * 2 : 0;
+    }
+
+    MeshIsPointStretch(index) {
+      const pointIndex = this._coercePointIndex(index);
+      return this._isValidPointIndex(pointIndex) && !!this._points[pointIndex].stretch;
     }
 
     // "tile" for Tiled Background hosts, "stretch" for Sprites (derived from

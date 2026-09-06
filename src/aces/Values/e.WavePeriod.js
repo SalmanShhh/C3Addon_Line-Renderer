@@ -1,11 +1,11 @@
 export const config = {
   returnType: "number",
-  description: "The number of points in the line.",
+  description: "Seconds per wave cycle (0 = still).",
   params: [],
 };
 
 export const expose = true;
 
 export default function () {
-  return this.MeshPointCount;
+  return this.MeshWavePeriod;
 }

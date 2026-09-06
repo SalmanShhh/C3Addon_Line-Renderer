@@ -17,6 +17,28 @@ export const DISTORT_AXIS_KEYS = [
 ];
 
 export const END_CAP_KEYS = ["round", "flat", "square"];
+// Wave shapes, matching the Sine behavior's "Wave" options. Each maps a phase
+// (radians) to [-1, 1].
+export const WAVE_SHAPE_KEYS = ["sine", "triangle", "sawtooth", "reverse_sawtooth", "square"];
+
+export function waveValue(shape, phase) {
+  const key = getComboKey(shape, WAVE_SHAPE_KEYS, WAVE_SHAPE_KEYS[0]);
+  if (key === "sine") {
+    return Math.sin(phase);
+  }
+  // Cycle position in [0, 1).
+  const t = ((phase / (Math.PI * 2)) % 1 + 1) % 1;
+  if (key === "triangle") {
+    return t < 0.5 ? -1 + 4 * t : 3 - 4 * t;
+  }
+  if (key === "sawtooth") {
+    return -1 + 2 * t;
+  }
+  if (key === "reverse_sawtooth") {
+    return 1 - 2 * t;
+  }
+  return t < 0.5 ? 1 : -1; // square
+}
 export const COORD_SPACE_KEYS = ["absolute", "relative"];
 
 // How the ribbon's width axis is oriented in 3D space:
@@ -88,18 +110,25 @@ export function getComboKey(value, keys, fallback = keys[0]) {
   return keys.includes(normalized) ? normalized : fallback;
 }
 
-// A control point: position (x, y, z) and half-thickness `width`.
-export function makePoint(x = 0, y = 0, width = 16, z = 0) {
-  return {
+// A control point: position (x, y, z), half-thickness `width`, and the texture
+// mode of the segment that starts at it: `stretch` false = constant texel
+// density (texture distance advances with the segment length), true = the
+// segment keeps a fixed texture length `restLength`, so the image stretches
+// and squashes with it.
+export function makePoint(x = 0, y = 0, width = 16, z = 0, extra = null) {
+  const point = {
     x: toFiniteNumber(x, 0),
     y: toFiniteNumber(y, 0),
     z: toFiniteNumber(z, 0),
     width: Math.max(0, toFiniteNumber(width, 0)),
+    stretch: !!extra?.stretch,
+    restLength: Math.max(0, toFiniteNumber(extra?.restLength, 0)),
   };
+  return point;
 }
 
 export function clonePoint(point) {
-  return makePoint(point?.x, point?.y, point?.width, point?.z);
+  return makePoint(point?.x, point?.y, point?.width, point?.z, point);
 }
 
 export function createInitialPoints(count, width) {
@@ -153,6 +182,9 @@ export function transformRelativePoint(point, transform) {
     z: toFiniteNumber(point.z, 0),
     width:
       Math.max(Math.abs(scaleX), Math.abs(scaleY)) * Math.max(0, toFiniteNumber(point.width, 0)),
+    stretch: !!point.stretch,
+    restLength:
+      Math.max(Math.abs(scaleX), Math.abs(scaleY)) * Math.max(0, toFiniteNumber(point.restLength, 0)),
   };
 }
 
@@ -323,7 +355,7 @@ function applyDistortion(sample, options, widthAxis) {
   const phase =
     toFiniteNumber(options.distortFrequency, 1) * sample.arcLength +
     toFiniteNumber(options.distortPhase, 0);
-  const offset = amplitude * Math.sin(phase);
+  const offset = amplitude * waveValue(options.waveShape, phase);
   const axis = getComboKey(options.distortAxis, DISTORT_AXIS_KEYS, "both");
 
   if (axis === "x_only") {
@@ -363,6 +395,10 @@ function emptyStroke(sourceCount, lineLength = 0, crossSection = 2) {
     bounds: null,
     minZ: 0,
     maxZ: 0,
+    textureMap: { arcs: [0], dist: [0] },
+    texMin: 0,
+    texMax: 0,
+    textureLength: 0,
   };
 }
 
@@ -396,7 +432,8 @@ export function estimateColumnCount(pointCount, distortResolution, endCapStyle, 
 //   points            control points (x, y, z, width)
 //   renderLod         max control points used (0 = all)
 //   distortResolution subdivisions per segment
-//   distortAmplitude / distortFrequency / distortPhase / distortAxis
+//   distortAmplitude / distortFrequency / distortPhase / distortAxis / waveShape
+//   (frequency is radians per pixel = 2 * PI / wavelength)
 //   endCapStyle       round | flat | square
 //   joinStyle         simple | miter | bevel | round (tubes force simple)
 //   crossSection      2 = flat ribbon, >2 = tube with that many ring points
@@ -428,14 +465,26 @@ export function buildStrokeColumns(options) {
       : clonePoint(point);
   });
 
+  // Cumulative arc length at each rendered point, and the cumulative TEXTURE
+  // distance: tile segments advance 1:1, stretch segments advance by their
+  // frozen rest length (falling back to 1:1 when the rest length is 0).
+  const texArcs = [0];
+  const texDist = [0];
   let lineLength = 0;
   for (let index = 1; index < transformed.length; index++) {
-    lineLength += length3(
+    const segment = length3(
       transformed[index].x - transformed[index - 1].x,
       transformed[index].y - transformed[index - 1].y,
       transformed[index].z - transformed[index - 1].z
     );
+    lineLength += segment;
+    const start = transformed[index - 1];
+    const textureLength =
+      start.stretch && start.restLength > 0 && segment > 0 ? start.restLength : segment;
+    texArcs.push(lineLength);
+    texDist.push(texDist[index - 1] + textureLength);
   }
+  const textureMap = { arcs: texArcs, dist: texDist };
 
   const samples = samplePoints(transformed, options.distortResolution);
   if (samples.length < 2) {
@@ -691,19 +740,51 @@ export function buildStrokeColumns(options) {
   }
 
   const rows = tube ? crossSection + 1 : 2;
+  const arcMin = columns[0].arcLength;
+  const arcMax = columns[columns.length - 1].arcLength;
   return {
     columns,
     rows,
     crossSection,
     lineLength,
-    arcMin: columns[0].arcLength,
-    arcMax: columns[columns.length - 1].arcLength,
+    arcMin,
+    arcMax,
+    textureMap,
+    texMin: textureDistanceAt(textureMap, arcMin),
+    texMax: textureDistanceAt(textureMap, arcMax),
+    textureLength: texDist[texDist.length - 1],
     vertexCount: columns.length * rows,
     renderedPointCount: transformed.length,
     bounds: columns.length ? bounds : null,
     minZ: columns.length ? minZ : 0,
     maxZ: columns.length ? maxZ : 0,
   };
+}
+
+// Map an arc length along the rendered polyline to texture distance using the
+// per-segment texture map (piecewise linear; 1:1 beyond both ends, which is
+// where end caps live).
+export function textureDistanceAt(textureMap, arcLength) {
+  const arcs = textureMap?.arcs;
+  const dist = textureMap?.dist;
+  if (!arcs || arcs.length < 2) {
+    return toFiniteNumber(arcLength, 0);
+  }
+  const last = arcs.length - 1;
+  if (arcLength <= arcs[0]) {
+    return dist[0] + (arcLength - arcs[0]);
+  }
+  if (arcLength >= arcs[last]) {
+    return dist[last] + (arcLength - arcs[last]);
+  }
+  let index = 1;
+  while (index < last && arcs[index] < arcLength) {
+    index++;
+  }
+  const a0 = arcs[index - 1];
+  const a1 = arcs[index];
+  const t = a1 > a0 ? (arcLength - a0) / (a1 - a0) : 0;
+  return dist[index - 1] + (dist[index] - dist[index - 1]) * t;
 }
 
 // Position of one mesh vertex for a column and row. Ribbons (rows = 2) use the

@@ -42,11 +42,11 @@ export const files = {
 // Folder ids -> category names shown in the Construct event editor.
 export const aceCategories = {
   Setup: "Points",
-  Point_Control: "Point properties",
+  Point_Control: "Points",
   Path_Building: "Lines & paths",
   Object_Following: "Objects",
   Coordinate_Space: "Co-ordinates",
-  Distortion: "Distortion",
+  Distortion: "Wave",
   Appearance: "Appearance",
   Performance: "Performance",
   Events: "Line",
@@ -80,8 +80,11 @@ export const info = {
 // NOTE: the runtime reads these by index in src/runtime/instance.js
 // (_getInitProperties()). Keep the order in sync when adding/removing entries.
 // "Enabled" must always stay LAST, like the built-in behaviors.
-// Anything the host object already defines (image, texture tiling, line
-// thickness, opacity, color, blend mode, effects) is deliberately not a property.
+// Anything the host object already defines (image, texture tiling and
+// scrolling via its own image scale/offset, line thickness, opacity, color,
+// blend mode, effects) is deliberately not a property.
+// Co-ordinate space (absolute by default) and the wave are runtime-only: set
+// them with actions so a new user is not confronted with them.
 export const properties = [
   {
     type: PROPERTY_TYPE.INTEGER,
@@ -93,27 +96,6 @@ export const properties = [
     },
     name: "Initial point count",
     desc: "The number of points the line starts with. They are spread across the object so it initially looks unchanged.",
-  },
-  {
-    type: PROPERTY_TYPE.COMBO,
-    id: "coordSpace",
-    options: {
-      initialValue: "relative",
-      interpolatable: false,
-      items: [{ absolute: "Absolute (layout)" }, { relative: "Relative (object)" }],
-    },
-    name: "Co-ordinate space",
-    desc: "Absolute uses layout co-ordinates. Relative uses co-ordinates relative to the object's position, angle and size, so the line moves with the object.",
-  },
-  {
-    type: PROPERTY_TYPE.FLOAT,
-    id: "uvScrollSpeed",
-    options: {
-      initialValue: 0,
-      interpolatable: false,
-    },
-    name: "Texture scroll speed",
-    desc: "How fast the image scrolls along the line, in pixels per second (Tiled Background only).",
   },
   {
     type: PROPERTY_TYPE.COMBO,
@@ -146,74 +128,14 @@ export const properties = [
     desc: "How the width of the line is oriented in 3D. Flat stays in the layout plane, Billboard faces the camera, Up vector follows the up vector.",
   },
   {
-    type: PROPERTY_TYPE.FLOAT,
-    id: "distortAmplitude",
-    options: {
-      initialValue: 0,
-      interpolatable: false,
-      minValue: 0,
-    },
-    name: "Distortion amplitude",
-    desc: "The maximum offset of the distortion wave, in pixels. 0 disables distortion.",
-  },
-  {
-    type: PROPERTY_TYPE.FLOAT,
-    id: "distortFrequency",
-    options: {
-      initialValue: 1,
-      interpolatable: false,
-      minValue: 0,
-    },
-    name: "Distortion frequency",
-    desc: "The frequency of the distortion wave along the line.",
-  },
-  {
-    type: PROPERTY_TYPE.FLOAT,
-    id: "distortSpeed",
-    options: {
-      initialValue: 1,
-      interpolatable: false,
-    },
-    name: "Distortion speed",
-    desc: "How fast the distortion wave moves along the line.",
-  },
-  {
-    type: PROPERTY_TYPE.COMBO,
-    id: "distortAxis",
-    options: {
-      initialValue: "both",
-      interpolatable: false,
-      items: [
-        { x_only: "X" },
-        { y_only: "Y" },
-        { both: "X and Y" },
-        { perpendicular: "Perpendicular" },
-        { z_only: "Z elevation" },
-      ],
-    },
-    name: "Distortion axis",
-    desc: "The direction the distortion wave moves points in.",
-  },
-  {
-    type: PROPERTY_TYPE.INTEGER,
-    id: "distortResolution",
-    options: {
-      initialValue: 1,
-      interpolatable: false,
-      minValue: 1,
-    },
-    name: "Distortion resolution",
-    desc: "The number of mesh subdivisions per segment. Increase for smoother distortion on long segments.",
-  },
-  {
     type: PROPERTY_TYPE.CHECK,
     id: "autoFit",
     options: {
-      initialValue: false,
+      initialValue: true,
       interpolatable: false,
     },
     name: "Auto-fit to line",
-    desc: "Move and resize the object to cover the line after each update (absolute co-ordinate space only). Keeps collisions and on-screen checks accurate for long lines.",
+    desc: "Absolute co-ordinate space only: after each update, size the object to the unrolled line (length by thickness) at the line's centre. This makes a Tiled Background tile at its own image scale and scroll with its own image offset.",
   },
   {
     type: PROPERTY_TYPE.COMBO,

@@ -1,12 +1,12 @@
 export const config = {
-  listName: "Remove point",
-  displayText: "Remove {my} point {0}",
-  description: "Remove the point at an index. A line always keeps at least two points.",
+  listName: "Is point pinned",
+  displayText: "{my} point {0} is pinned",
+  description: "True if the point is following a pinned instance.",
   params: [{ id: "index", name: "Index", desc: "The zero-based index of the point.", type: "number", initialValue: "0" }],
 };
 
 export const expose = true;
 
 export default function (index) {
-  this._removePointAt(this._coercePointIndex(index));
+  return this._isPointPinned(this._coercePointIndex(index));
 }

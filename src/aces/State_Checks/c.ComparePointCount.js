@@ -14,20 +14,13 @@ export const expose = true;
 // 3 less or equal, 4 greater, 5 greater or equal.
 export function compareValues(cmp, a, b) {
   switch (cmp) {
-    case 0:
-      return a === b;
-    case 1:
-      return a !== b;
-    case 2:
-      return a < b;
-    case 3:
-      return a <= b;
-    case 4:
-      return a > b;
-    case 5:
-      return a >= b;
-    default:
-      return false;
+    case 0: return a === b;
+    case 1: return a !== b;
+    case 2: return a < b;
+    case 3: return a <= b;
+    case 4: return a > b;
+    case 5: return a >= b;
+    default: return false;
   }
 }
 

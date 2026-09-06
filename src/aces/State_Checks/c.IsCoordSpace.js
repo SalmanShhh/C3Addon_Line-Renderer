@@ -5,14 +5,7 @@ export const config = {
   displayText: "{my} co-ordinate space is {0}",
   description: "True if the line uses the given co-ordinate space.",
   params: [
-    {
-      id: "space",
-      name: "Co-ordinate space",
-      desc: "The co-ordinate space to compare to.",
-      type: "combo",
-      initialValue: "relative",
-      items: [{ absolute: "Absolute (layout)" }, { relative: "Relative (object)" }],
-    },
+    { id: "space", name: "Co-ordinate space", desc: "The co-ordinate space to compare to.", type: "combo", initialValue: "absolute", items: [{ absolute: "Absolute" }, { relative: "Relative" }] },
   ],
 };
 

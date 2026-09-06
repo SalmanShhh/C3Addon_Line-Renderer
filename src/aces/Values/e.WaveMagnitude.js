@@ -1,11 +1,11 @@
 export const config = {
   returnType: "number",
-  description: "The number of points in the line.",
+  description: "How far the wave pushes points, in pixels.",
   params: [],
 };
 
 export const expose = true;
 
 export default function () {
-  return this.MeshPointCount;
+  return this.MeshWaveMagnitude;
 }

@@ -10,11 +10,11 @@
         "aceCategories": {
           "Appearance": "Appearance",
           "Coordinate_Space": "Co-ordinates",
-          "Distortion": "Distortion",
+          "Distortion": "Wave",
           "Object_Following": "Objects",
           "Path_Building": "Lines & paths",
           "Performance": "Performance",
-          "Point_Control": "Point properties",
+          "Point_Control": "Points",
           "Setup": "Points",
           "Events": "Line",
           "State_Checks": "Line",
@@ -24,18 +24,6 @@
           "initialPointCount": {
             "name": "Initial point count",
             "desc": "The number of points the line starts with. They are spread across the object so it initially looks unchanged."
-          },
-          "coordSpace": {
-            "name": "Co-ordinate space",
-            "desc": "Absolute uses layout co-ordinates. Relative uses co-ordinates relative to the object's position, angle and size, so the line moves with the object.",
-            "items": {
-              "absolute": "Absolute (layout)",
-              "relative": "Relative (object)"
-            }
-          },
-          "uvScrollSpeed": {
-            "name": "Texture scroll speed",
-            "desc": "How fast the image scrolls along the line, in pixels per second (Tiled Background only)."
           },
           "endCapStyle": {
             "name": "End caps",
@@ -55,36 +43,9 @@
               "up_vector": "Up vector"
             }
           },
-          "distortAmplitude": {
-            "name": "Distortion amplitude",
-            "desc": "The maximum offset of the distortion wave, in pixels. 0 disables distortion."
-          },
-          "distortFrequency": {
-            "name": "Distortion frequency",
-            "desc": "The frequency of the distortion wave along the line."
-          },
-          "distortSpeed": {
-            "name": "Distortion speed",
-            "desc": "How fast the distortion wave moves along the line."
-          },
-          "distortAxis": {
-            "name": "Distortion axis",
-            "desc": "The direction the distortion wave moves points in.",
-            "items": {
-              "x_only": "X",
-              "y_only": "Y",
-              "both": "X and Y",
-              "perpendicular": "Perpendicular",
-              "z_only": "Z elevation"
-            }
-          },
-          "distortResolution": {
-            "name": "Distortion resolution",
-            "desc": "The number of mesh subdivisions per segment. Increase for smoother distortion on long segments."
-          },
           "autoFit": {
             "name": "Auto-fit to line",
-            "desc": "Move and resize the object to cover the line after each update (absolute co-ordinate space only). Keeps collisions and on-screen checks accurate for long lines."
+            "desc": "Absolute co-ordinate space only: after each update, size the object to the unrolled line (length by thickness) at the line's centre. This makes a Tiled Background tile at its own image scale and scroll with its own image offset."
           },
           "joinStyle": {
             "name": "Joins",
@@ -106,66 +67,49 @@
           }
         },
         "actions": {
-          "SetBillboardCamera": {
-            "list-name": "Set billboard camera",
-            "display-text": "Set {my} billboard camera to {0} at ({1}, {2}, {3})",
-            "description": "Set the camera position used by Billboard facing, either from the 3D camera automatically or from a position.",
+          "SetFacing": {
+            "list-name": "Set facing",
+            "display-text": "Set {my} facing to {0} with ({1}, {2}, {3})",
+            "description": "Set how the line width is oriented in 3D. Flat stays in the layout plane. Billboard faces the camera: X, Y, Z give a camera position, or all 0 to use the 3D Camera object. Up vector follows the up direction given by X, Y, Z.",
             "params": {
-              "mode": {
-                "name": "Mode",
-                "desc": "Automatic uses the 3D Camera object. Manual uses the position below.",
+              "facing": {
+                "name": "Facing",
+                "desc": "Flat, Billboard or Up vector.",
                 "items": {
-                  "automatic": "Automatic (3D Camera object)",
-                  "manual": "Manual"
+                  "flat": "Flat",
+                  "billboard": "Billboard",
+                  "up_vector": "Up vector"
                 }
               },
               "x": {
                 "name": "X",
-                "desc": "The camera X co-ordinate (manual mode)."
+                "desc": "Camera X (Billboard) or up vector X (Up vector)."
               },
               "y": {
                 "name": "Y",
-                "desc": "The camera Y co-ordinate (manual mode)."
+                "desc": "Camera Y (Billboard) or up vector Y (Up vector)."
               },
               "z": {
-                "name": "Z elevation",
-                "desc": "The camera Z elevation (manual mode)."
+                "name": "Z",
+                "desc": "Camera Z elevation (Billboard; all 0 = automatic) or up vector Z (Up vector)."
               }
             }
           },
-          "SetCrossSection": {
-            "list-name": "Set cross-section points",
-            "display-text": "Set {my} cross-section points to {0}",
-            "description": "Set the number of points around the line: 2 draws a flat ribbon, 3 or more draws a 3D tube.",
+          "SetLineStyle": {
+            "list-name": "Set line style",
+            "display-text": "Set {my} line style to end caps {0}, joins {1}, cross-section points {2}",
+            "description": "Set the shape of the line ends, how corners are drawn, and the number of points around the line (2 = flat ribbon, 3 or more = 3D tube).",
             "params": {
-              "points": {
-                "name": "Points",
-                "desc": "The number of points around the cross-section (2 for a ribbon, 3 to 32 for a tube)."
-              }
-            }
-          },
-          "SetEndCapStyle": {
-            "list-name": "Set end caps",
-            "display-text": "Set {my} end caps to {0}",
-            "description": "Set the shape of the start and end of the line.",
-            "params": {
-              "style": {
+              "caps": {
                 "name": "End caps",
-                "desc": "None cuts off at the end point. Square and Round extend by half the thickness.",
+                "desc": "None cuts off at the end point; Square and Round extend by half the thickness.",
                 "items": {
                   "round": "Round",
                   "flat": "None",
                   "square": "Square"
                 }
-              }
-            }
-          },
-          "SetJoinStyle": {
-            "list-name": "Set joins",
-            "display-text": "Set {my} joins to {0}",
-            "description": "Set how corners between segments are drawn.",
-            "params": {
-              "style": {
+              },
+              "joins": {
                 "name": "Joins",
                 "desc": "Simple, Miter, Bevel or Round corners.",
                 "items": {
@@ -174,69 +118,25 @@
                   "bevel": "Bevel",
                   "round": "Round"
                 }
-              }
-            }
-          },
-          "SetRibbonFacing": {
-            "list-name": "Set facing",
-            "display-text": "Set {my} facing to {0}",
-            "description": "Set how the width of the line is oriented in 3D.",
-            "params": {
-              "facing": {
-                "name": "Facing",
-                "desc": "Flat stays in the layout plane, Billboard faces the camera, Up vector follows the up vector.",
-                "items": {
-                  "flat": "Flat",
-                  "billboard": "Billboard",
-                  "up_vector": "Up vector"
-                }
-              }
-            }
-          },
-          "SetUpVector": {
-            "list-name": "Set up vector",
-            "display-text": "Set {my} up vector to ({0}, {1}, {2})",
-            "description": "Set the up direction used by Up vector facing. The default (0, 0, 1) points up in Z elevation.",
-            "params": {
-              "x": {
-                "name": "X",
-                "desc": "The X component of the up vector."
               },
-              "y": {
-                "name": "Y",
-                "desc": "The Y component of the up vector."
-              },
-              "z": {
-                "name": "Z",
-                "desc": "The Z component of the up vector."
+              "crossSection": {
+                "name": "Cross-section points",
+                "desc": "Points around the line: 2 for a flat ribbon, 3 to 32 for a tube."
               }
             }
-          },
-          "SetUVScrollSpeed": {
-            "list-name": "Set texture scroll speed",
-            "display-text": "Set {my} texture scroll speed to {0}",
-            "description": "Set how fast the image scrolls along the line (Tiled Background only).",
-            "params": {
-              "speed": {
-                "name": "Speed",
-                "desc": "The scroll speed along the line, in pixels per second."
-              }
-            }
-          },
-          "FitObjectToLine": {
-            "list-name": "Fit object to line",
-            "display-text": "Fit {my} object to line",
-            "description": "Move and resize the object once so that it covers the line (absolute co-ordinate space only).",
-            "params": {}
           },
           "SetAutoFit": {
             "list-name": "Set auto-fit to line",
             "display-text": "Set {my} auto-fit to line {0}",
-            "description": "Enable or disable moving and resizing the object to cover the line after each update (absolute co-ordinate space only).",
+            "description": "Enable or disable sizing the object to the unrolled line (texture length by thickness) after each update (absolute co-ordinate space only).",
             "params": {
-              "enabled": {
-                "name": "Enabled",
-                "desc": "Whether auto-fit is enabled."
+              "state": {
+                "name": "State",
+                "desc": "Whether auto-fit is enabled.",
+                "items": {
+                  "disabled": "Disabled",
+                  "enabled": "Enabled"
+                }
               }
             }
           },
@@ -255,91 +155,81 @@
               }
             }
           },
-          "SetDistortAmplitude": {
-            "list-name": "Set distortion amplitude",
-            "display-text": "Set {my} distortion amplitude to {0}",
-            "description": "Set the maximum offset of the distortion wave. 0 disables distortion.",
+          "SetWave": {
+            "list-name": "Set wave",
+            "display-text": "Set {my} wave to magnitude {0}, wavelength {1}, period {2}, {3}, {4}",
+            "description": "Set the wave that ripples the line: how far points move, the length of one wave, seconds per cycle, the direction points are pushed, and the wave shape.",
             "params": {
-              "amplitude": {
-                "name": "Amplitude",
-                "desc": "The maximum offset of the wave, in pixels."
-              }
-            }
-          },
-          "SetDistortAxis": {
-            "list-name": "Set distortion axis",
-            "display-text": "Set {my} distortion axis to {0}",
-            "description": "Set the direction the distortion wave moves points in.",
-            "params": {
-              "axis": {
-                "name": "Axis",
-                "desc": "The direction of the distortion offset.",
+              "magnitude": {
+                "name": "Magnitude",
+                "desc": "How far points are pushed, in pixels. 0 turns the wave off."
+              },
+              "wavelength": {
+                "name": "Wavelength",
+                "desc": "The length of one full wave along the line, in pixels."
+              },
+              "period": {
+                "name": "Period",
+                "desc": "Seconds for one full cycle. The wave travels one wavelength per period; 0 keeps it still, negative reverses it."
+              },
+              "movement": {
+                "name": "Movement",
+                "desc": "The direction points are pushed in.",
                 "items": {
-                  "x_only": "X",
-                  "y_only": "Y",
-                  "both": "X and Y",
-                  "perpendicular": "Perpendicular",
+                  "x_only": "Horizontal",
+                  "y_only": "Vertical",
+                  "both": "Horizontal and vertical",
+                  "perpendicular": "Across the line",
                   "z_only": "Z elevation"
+                }
+              },
+              "shape": {
+                "name": "Wave",
+                "desc": "The wave shape.",
+                "items": {
+                  "sine": "Sine",
+                  "triangle": "Triangle",
+                  "sawtooth": "Sawtooth",
+                  "reverse_sawtooth": "Reverse sawtooth",
+                  "square": "Square"
                 }
               }
             }
           },
-          "SetDistortFrequency": {
-            "list-name": "Set distortion frequency",
-            "display-text": "Set {my} distortion frequency to {0}",
-            "description": "Set the frequency of the distortion wave along the line.",
+          "SetWaveMagnitude": {
+            "list-name": "Set wave magnitude",
+            "display-text": "Set {my} wave magnitude to {0}",
+            "description": "Set how far the wave pushes points, in pixels. 0 turns the wave off; animate it to fade a wave in or out.",
             "params": {
-              "frequency": {
-                "name": "Frequency",
-                "desc": "The frequency of the wave along the line."
+              "magnitude": {
+                "name": "Magnitude",
+                "desc": "How far points are pushed, in pixels."
               }
             }
           },
-          "SetDistortion": {
-            "list-name": "Set distortion",
-            "display-text": "Set {my} distortion to amplitude {0}, frequency {1}, speed {2}",
-            "description": "Set the amplitude, frequency and speed of the distortion wave.",
-            "params": {
-              "amplitude": {
-                "name": "Amplitude",
-                "desc": "The maximum offset of the wave, in pixels. 0 disables distortion."
-              },
-              "frequency": {
-                "name": "Frequency",
-                "desc": "The frequency of the wave along the line."
-              },
-              "speed": {
-                "name": "Speed",
-                "desc": "How fast the wave moves along the line."
-              }
-            }
-          },
-          "SetDistortSpeed": {
-            "list-name": "Set distortion speed",
-            "display-text": "Set {my} distortion speed to {0}",
-            "description": "Set how fast the distortion wave moves along the line.",
-            "params": {
-              "speed": {
-                "name": "Speed",
-                "desc": "How fast the wave moves along the line."
-              }
-            }
-          },
-          "SetPointsFromObjects": {
-            "list-name": "Set points from objects",
-            "display-text": "Set {my} points from {0} instances",
-            "description": "Replace all points with the positions of the picked instances of an object, one point per instance.",
+          "PinPointsToObjects": {
+            "list-name": "Pin points to objects",
+            "display-text": "Pin {my} points to {0} instances ({1})",
+            "description": "Replace all points with one per picked instance of an object (in picking order) and, when pinned, keep each point following its instance every tick.",
             "params": {
               "object": {
                 "name": "Object",
-                "desc": "The object whose picked instances become the points."
+                "desc": "The object whose picked instances become the points. At least two instances are needed."
+              },
+              "mode": {
+                "name": "Mode",
+                "desc": "Pinned keeps following the instances every tick. Once only sets the points now.",
+                "items": {
+                  "pinned": "Pinned",
+                  "once": "Once"
+                }
               }
             }
           },
-          "SetPointToImagePoint": {
-            "list-name": "Set point to image point",
-            "display-text": "Set {my} point {0} to {1} image point {3} on face {2}",
-            "description": "Set a point to the position of an image point of the first picked instance, including its Z elevation. Choose a face for 3D shape face image points.",
+          "PinPointToObject": {
+            "list-name": "Pin point to object",
+            "display-text": "Pin {my} point {0} to {1} image point {2} on face {3} ({4})",
+            "description": "Move a point to an image point of the first picked instance (with its Z elevation) and, when pinned, keep following it every tick. Setting a point past the end adds points up to it.",
             "params": {
               "index": {
                 "name": "Index",
@@ -347,13 +237,17 @@
               },
               "object": {
                 "name": "Object",
-                "desc": "The object to take the image point from."
+                "desc": "The object to pin the point to."
+              },
+              "imagePoint": {
+                "name": "Image point",
+                "desc": "The image point name or number to follow (0 is the origin)."
               },
               "face": {
                 "name": "Face",
-                "desc": "The 3D shape face the image point is on, or None for other objects.",
+                "desc": "For 3D shapes, the face the image point is on. None for other objects.",
                 "items": {
-                  "none": "None (object image point)",
+                  "none": "None",
                   "back": "Back",
                   "front": "Front",
                   "left": "Left",
@@ -362,16 +256,20 @@
                   "bottom": "Bottom"
                 }
               },
-              "name": {
-                "name": "Image point",
-                "desc": "The name or number of the image point (0 is the origin)."
+              "mode": {
+                "name": "Mode",
+                "desc": "Pinned keeps following the instance every tick. Once only moves the point now.",
+                "items": {
+                  "pinned": "Pinned",
+                  "once": "Once"
+                }
               }
             }
           },
           "SetPointToNode": {
             "list-name": "Set point to 3D model node",
             "display-text": "Set {my} point {0} to {2} node {3} of {1}",
-            "description": "Set a point to the position of a mesh or bone node of the first picked 3D model instance.",
+            "description": "Move a point to the position of a mesh or bone node of the first picked 3D model instance, including its Z elevation.",
             "params": {
               "index": {
                 "name": "Index",
@@ -395,22 +293,18 @@
               }
             }
           },
-          "SetPointToObject": {
-            "list-name": "Set point to object",
-            "display-text": "Set {my} point {0} to position of {1}",
-            "description": "Set a point to the position and Z elevation of the first picked instance of an object.",
+          "UnpinPoint": {
+            "list-name": "Unpin point",
+            "display-text": "Unpin {my} point {0}",
+            "description": "Stop a point following its pinned instance (the point keeps its position). Use -1 to unpin all points.",
             "params": {
               "index": {
                 "name": "Index",
-                "desc": "The zero-based index of the point."
-              },
-              "object": {
-                "name": "Object",
-                "desc": "The object to take the position from."
+                "desc": "The zero-based index of the point, or -1 for all points."
               }
             }
           },
-          "BuildArc": {
+          "SetArc": {
             "list-name": "Set arc",
             "display-text": "Set {my} arc at ({0}, {1}) radius {2} from {3} to {4} degrees with {5} segments",
             "description": "Replace all points with an arc around a position.",
@@ -441,7 +335,7 @@
               }
             }
           },
-          "BuildBezier": {
+          "SetBezierCurve": {
             "list-name": "Set bezier curve",
             "display-text": "Set {my} bezier curve from ({0}, {1}) via ({2}, {3}) and ({4}, {5}) to ({6}, {7}) with {8} segments",
             "description": "Replace all points with a cubic bezier curve.",
@@ -484,48 +378,10 @@
               }
             }
           },
-          "ConnectObjects": {
-            "list-name": "Set line between objects",
-            "display-text": "Set {my} line from {0} to {1}",
-            "description": "Replace all points with a straight line between the first picked instances of two objects.",
-            "params": {
-              "from": {
-                "name": "From",
-                "desc": "The object to start the line at."
-              },
-              "to": {
-                "name": "To",
-                "desc": "The object to end the line at."
-              }
-            }
-          },
           "SetLine": {
             "list-name": "Set line",
-            "display-text": "Set {my} line from ({0}, {1}) to ({2}, {3})",
-            "description": "Replace all points with a straight line between two positions.",
-            "params": {
-              "x1": {
-                "name": "Start X",
-                "desc": "The X co-ordinate of the start of the line."
-              },
-              "y1": {
-                "name": "Start Y",
-                "desc": "The Y co-ordinate of the start of the line."
-              },
-              "x2": {
-                "name": "End X",
-                "desc": "The X co-ordinate of the end of the line."
-              },
-              "y2": {
-                "name": "End Y",
-                "desc": "The Y co-ordinate of the end of the line."
-              }
-            }
-          },
-          "SetLine3D": {
-            "list-name": "Set line with Z elevation",
             "display-text": "Set {my} line from ({0}, {1}, {2}) to ({3}, {4}, {5})",
-            "description": "Replace all points with a straight line between two positions with Z elevations.",
+            "description": "Replace all points with a straight line between two positions.",
             "params": {
               "x1": {
                 "name": "Start X",
@@ -553,7 +409,7 @@
               }
             }
           },
-          "SmoothPath": {
+          "SmoothLine": {
             "list-name": "Smooth line",
             "display-text": "Smooth {my} line with {0} subdivisions",
             "description": "Replace the points with a smooth curve passing through them.",
@@ -564,111 +420,48 @@
               }
             }
           },
-          "SetDistortResolution": {
-            "list-name": "Set distortion resolution",
-            "display-text": "Set {my} distortion resolution to {0}",
-            "description": "Set the number of mesh subdivisions per segment used for distortion.",
-            "params": {
-              "subdivisions": {
-                "name": "Subdivisions",
-                "desc": "The number of mesh subdivisions per segment (at least 1)."
-              }
-            }
-          },
-          "SetFrustumCulling": {
-            "list-name": "Set off-screen culling",
-            "display-text": "Set {my} off-screen culling {0}",
-            "description": "Enable or disable skipping line updates while the line is off-screen.",
-            "params": {
-              "enabled": {
-                "name": "Enabled",
-                "desc": "Whether off-screen culling is enabled."
-              }
-            }
-          },
-          "SetRenderLOD": {
-            "list-name": "Set maximum drawn points",
-            "display-text": "Set {my} maximum drawn points to {0}",
-            "description": "Limit how many points are used to draw the line. 0 uses all points.",
+          "SetPerformance": {
+            "list-name": "Set performance",
+            "display-text": "Set {my} maximum drawn points {0}, wave resolution {1}, off-screen culling {2}",
+            "description": "Limit how many points are used to draw the line (0 = all), set how many mesh steps each segment is split into for the wave, and whether updates are skipped while the line is off-screen.",
             "params": {
               "maxPoints": {
-                "name": "Maximum points",
+                "name": "Maximum drawn points",
                 "desc": "The maximum number of points used to draw the line, or 0 for all."
+              },
+              "waveResolution": {
+                "name": "Wave resolution",
+                "desc": "Mesh steps per segment (at least 1). Use more for a smooth wave on long segments."
+              },
+              "culling": {
+                "name": "Off-screen culling",
+                "desc": "Skip updating the line while it is off-screen.",
+                "items": {
+                  "disabled": "Disabled",
+                  "enabled": "Enabled"
+                }
               }
             }
           },
-          "SetAllWidths": {
-            "list-name": "Set width of all points",
-            "display-text": "Set {my} width of all points to {0}",
-            "description": "Set the width of the line at every point.",
+          "SetAllPointsSize": {
+            "list-name": "Set size of all points",
+            "display-text": "Set {my} size of all points to ({0}, {1})",
+            "description": "Set the width (texture width per segment: 0 = automatic, a value fixes it) and height (line thickness) of every point. Use -1 to keep a value.",
             "params": {
               "width": {
                 "name": "Width",
-                "desc": "Half the thickness of the line, in pixels."
+                "desc": "Texture width per segment, in pixels: 0 = automatic, a value fixes it, -1 = keep."
+              },
+              "height": {
+                "name": "Height",
+                "desc": "The line thickness, in pixels, or -1 to keep."
               }
             }
           },
-          "SetPoint": {
-            "list-name": "Set point",
-            "display-text": "Set {my} point {0} to ({1}, {2}) with width {3}",
-            "description": "Set the position and width of a point.",
-            "params": {
-              "index": {
-                "name": "Index",
-                "desc": "The zero-based index of the point."
-              },
-              "x": {
-                "name": "X",
-                "desc": "The X co-ordinate of the point."
-              },
-              "y": {
-                "name": "Y",
-                "desc": "The Y co-ordinate of the point."
-              },
-              "width": {
-                "name": "Width",
-                "desc": "Half the thickness of the line at this point, in pixels."
-              }
-            }
-          },
-          "SetPointWidth": {
-            "list-name": "Set point width",
-            "display-text": "Set {my} point {0} width to {1}",
-            "description": "Set the width of the line at a point.",
-            "params": {
-              "index": {
-                "name": "Index",
-                "desc": "The zero-based index of the point."
-              },
-              "width": {
-                "name": "Width",
-                "desc": "Half the thickness of the line at this point, in pixels."
-              }
-            }
-          },
-          "SetPointXY": {
+          "SetPointPosition": {
             "list-name": "Set point position",
-            "display-text": "Set {my} point {0} position to ({1}, {2})",
-            "description": "Set the position of a point.",
-            "params": {
-              "index": {
-                "name": "Index",
-                "desc": "The zero-based index of the point."
-              },
-              "x": {
-                "name": "X",
-                "desc": "The X co-ordinate of the point."
-              },
-              "y": {
-                "name": "Y",
-                "desc": "The Y co-ordinate of the point."
-              }
-            }
-          },
-          "SetPointXYZ": {
-            "list-name": "Set point position with Z elevation",
-            "display-text": "Set {my} point {0} position to ({1}, {2}) Z elevation {3}",
-            "description": "Set the position and Z elevation of a point.",
+            "display-text": "Set {my} point {0} position to ({1}, {2}, {3})",
+            "description": "Set the position and Z elevation of a point. Setting a point past the end adds points up to it.",
             "params": {
               "index": {
                 "name": "Index",
@@ -684,28 +477,32 @@
               },
               "z": {
                 "name": "Z elevation",
-                "desc": "The Z elevation of the point: relative to the object in relative space, or the layout Z elevation in absolute space."
+                "desc": "The Z elevation of the point (relative to the object in relative space, layout Z elevation in absolute space)."
               }
             }
           },
-          "SetPointZ": {
-            "list-name": "Set point Z elevation",
-            "display-text": "Set {my} point {0} Z elevation to {1}",
-            "description": "Set the Z elevation of a point.",
+          "SetPointSize": {
+            "list-name": "Set point size",
+            "display-text": "Set {my} point {0} size to ({1}, {2})",
+            "description": "Set a point's width (texture width of the segment starting at it: 0 = automatic, a value fixes it so the image stretches with the segment) and height (line thickness). Use -1 to keep a value.",
             "params": {
               "index": {
                 "name": "Index",
                 "desc": "The zero-based index of the point."
               },
-              "z": {
-                "name": "Z elevation",
-                "desc": "The Z elevation of the point: relative to the object in relative space, or the layout Z elevation in absolute space."
+              "width": {
+                "name": "Width",
+                "desc": "Texture width of the segment, in pixels: 0 = automatic (constant density), a value fixes it, -1 = keep."
+              },
+              "height": {
+                "name": "Height",
+                "desc": "The line thickness at this point, in pixels, or -1 to keep."
               }
             }
           },
           "AddPoint": {
             "list-name": "Add point",
-            "display-text": "Add {my} point at ({0}, {1}) with width {2}",
+            "display-text": "Add {my} point at ({0}, {1}, {2}) with height {3}",
             "description": "Add a point to the end of the line.",
             "params": {
               "x": {
@@ -716,44 +513,19 @@
                 "name": "Y",
                 "desc": "The Y co-ordinate of the point."
               },
-              "width": {
-                "name": "Width",
-                "desc": "Half the thickness of the line at this point, in pixels."
-              }
-            }
-          },
-          "AddPoint3D": {
-            "list-name": "Add point with Z elevation",
-            "display-text": "Add {my} point at ({0}, {1}) Z elevation {2} with width {3}",
-            "description": "Add a point with a Z elevation to the end of the line.",
-            "params": {
-              "x": {
-                "name": "X",
-                "desc": "The X co-ordinate of the point."
-              },
-              "y": {
-                "name": "Y",
-                "desc": "The Y co-ordinate of the point."
-              },
               "z": {
                 "name": "Z elevation",
-                "desc": "The Z elevation of the point: relative to the object in relative space, or the layout Z elevation in absolute space."
+                "desc": "The Z elevation of the point (relative to the object in relative space, layout Z elevation in absolute space)."
               },
-              "width": {
-                "name": "Width",
-                "desc": "Half the thickness of the line at this point, in pixels."
+              "height": {
+                "name": "Height",
+                "desc": "The line thickness at this point, in pixels (like the object height)."
               }
             }
-          },
-          "ClearPoints": {
-            "list-name": "Clear points",
-            "display-text": "Clear {my} points",
-            "description": "Remove all points, leaving two points at the origin.",
-            "params": {}
           },
           "InsertPoint": {
             "list-name": "Insert point",
-            "display-text": "Insert {my} point {0} at ({1}, {2}) with width {3}",
+            "display-text": "Insert {my} point {0} at ({1}, {2}, {3}) with height {4}",
             "description": "Insert a point at an index, moving later points up by one.",
             "params": {
               "index": {
@@ -768,9 +540,13 @@
                 "name": "Y",
                 "desc": "The Y co-ordinate of the point."
               },
-              "width": {
-                "name": "Width",
-                "desc": "Half the thickness of the line at this point, in pixels."
+              "z": {
+                "name": "Z elevation",
+                "desc": "The Z elevation of the point (relative to the object in relative space, layout Z elevation in absolute space)."
+              },
+              "height": {
+                "name": "Height",
+                "desc": "The line thickness at this point, in pixels (like the object height)."
               }
             }
           },
@@ -781,7 +557,7 @@
             "params": {
               "index": {
                 "name": "Index",
-                "desc": "The zero-based index of the point to remove."
+                "desc": "The zero-based index of the point."
               }
             }
           },
@@ -803,7 +579,7 @@
           "SetPointCount": {
             "list-name": "Set point count",
             "display-text": "Set {my} point count to {0}",
-            "description": "Set the number of points in the line, adding points at (0, 0) or removing points from the end.",
+            "description": "Set the number of points in the line, adding points at the end or removing points from the end.",
             "params": {
               "count": {
                 "name": "Count",
@@ -849,23 +625,11 @@
                 "name": "Co-ordinate space",
                 "desc": "The co-ordinate space to compare to.",
                 "items": {
-                  "absolute": "Absolute (layout)",
-                  "relative": "Relative (object)"
+                  "absolute": "Absolute",
+                  "relative": "Relative"
                 }
               }
             }
-          },
-          "IsCulled": {
-            "list-name": "Is culled off-screen",
-            "display-text": "{my} is culled off-screen",
-            "description": "True if the last update was skipped because the line was off-screen.",
-            "params": {}
-          },
-          "IsDistortionActive": {
-            "list-name": "Is distorting",
-            "display-text": "{my} is distorting",
-            "description": "True if the distortion amplitude is greater than 0.",
-            "params": {}
           },
           "IsEnabled": {
             "list-name": "Is enabled",
@@ -873,16 +637,10 @@
             "description": "True if the line is currently enabled.",
             "params": {}
           },
-          "IsLODActive": {
-            "list-name": "Is limiting drawn points",
-            "display-text": "{my} is limiting drawn points",
-            "description": "True if the maximum drawn points setting is reducing the number of points drawn.",
-            "params": {}
-          },
-          "IsPointIndexValid": {
-            "list-name": "Point exists",
-            "display-text": "{my} point {0} exists",
-            "description": "True if a point with the given index exists.",
+          "IsPointPinned": {
+            "list-name": "Is point pinned",
+            "display-text": "{my} point {0} is pinned",
+            "description": "True if the point is following a pinned instance.",
             "params": {
               "index": {
                 "name": "Index",
@@ -890,94 +648,14 @@
               }
             }
           },
-          "IsUVScrolling": {
-            "list-name": "Is texture scrolling",
-            "display-text": "{my} texture is scrolling",
-            "description": "True if the texture scroll speed is not 0.",
+          "IsWaveActive": {
+            "list-name": "Is wave active",
+            "display-text": "{my} wave is active",
+            "description": "True if the wave magnitude is greater than 0.",
             "params": {}
           }
         },
         "expressions": {
-          "CoordSpace": {
-            "translated-name": "CoordSpace",
-            "description": "The co-ordinate space: \"absolute\" or \"relative\".",
-            "params": {}
-          },
-          "CrossSection": {
-            "translated-name": "CrossSection",
-            "description": "The number of cross-section points (2 for a ribbon).",
-            "params": {}
-          },
-          "DistortAmplitude": {
-            "translated-name": "DistortAmplitude",
-            "description": "The distortion amplitude, in pixels.",
-            "params": {}
-          },
-          "DistortFrequency": {
-            "translated-name": "DistortFrequency",
-            "description": "The distortion frequency.",
-            "params": {}
-          },
-          "DistortResolution": {
-            "translated-name": "DistortResolution",
-            "description": "The number of mesh subdivisions per segment.",
-            "params": {}
-          },
-          "DistortSpeed": {
-            "translated-name": "DistortSpeed",
-            "description": "The distortion speed.",
-            "params": {}
-          },
-          "EndCapStyle": {
-            "translated-name": "EndCapStyle",
-            "description": "The end cap style: \"round\", \"flat\" or \"square\".",
-            "params": {}
-          },
-          "GetPointWidth": {
-            "translated-name": "GetPointWidth",
-            "description": "The width (half thickness) of the line at a point.",
-            "params": {
-              "index": {
-                "name": "Index",
-                "desc": "The zero-based index of the point."
-              }
-            }
-          },
-          "GetPointX": {
-            "translated-name": "GetPointX",
-            "description": "The layout X co-ordinate of a point.",
-            "params": {
-              "index": {
-                "name": "Index",
-                "desc": "The zero-based index of the point."
-              }
-            }
-          },
-          "GetPointY": {
-            "translated-name": "GetPointY",
-            "description": "The layout Y co-ordinate of a point.",
-            "params": {
-              "index": {
-                "name": "Index",
-                "desc": "The zero-based index of the point."
-              }
-            }
-          },
-          "GetPointZ": {
-            "translated-name": "GetPointZ",
-            "description": "The layout Z elevation of a point.",
-            "params": {
-              "index": {
-                "name": "Index",
-                "desc": "The zero-based index of the point."
-              }
-            }
-          },
-          "JoinStyle": {
-            "translated-name": "JoinStyle",
-            "description": "The join style: \"simple\", \"miter\", \"bevel\" or \"round\".",
-            "params": {}
-          },
           "LineLength": {
             "translated-name": "LineLength",
             "description": "The length of the line, in pixels.",
@@ -988,29 +666,74 @@
             "description": "The number of points in the line.",
             "params": {}
           },
-          "RenderedPointCount": {
-            "translated-name": "RenderedPointCount",
-            "description": "The number of points used to draw the line after the maximum drawn points limit.",
+          "PointHeight": {
+            "translated-name": "PointHeight",
+            "description": "The line thickness at a point, in pixels.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "The zero-based index of the point."
+              }
+            }
+          },
+          "PointWidth": {
+            "translated-name": "PointWidth",
+            "description": "The texture width of the segment starting at a point, in pixels: its fixed width if set, otherwise its current length.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "The zero-based index of the point."
+              }
+            }
+          },
+          "PointX": {
+            "translated-name": "PointX",
+            "description": "The layout X co-ordinate of a point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "The zero-based index of the point."
+              }
+            }
+          },
+          "PointY": {
+            "translated-name": "PointY",
+            "description": "The layout Y co-ordinate of a point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "The zero-based index of the point."
+              }
+            }
+          },
+          "PointZ": {
+            "translated-name": "PointZ",
+            "description": "The layout Z elevation of a point.",
+            "params": {
+              "index": {
+                "name": "Index",
+                "desc": "The zero-based index of the point."
+              }
+            }
+          },
+          "TextureLength": {
+            "translated-name": "TextureLength",
+            "description": "The texture length of the line, in pixels (the object width after Auto-fit). Equals LineLength unless some segments have a fixed width.",
             "params": {}
           },
-          "RenderLOD": {
-            "translated-name": "RenderLOD",
-            "description": "The maximum drawn points setting, or 0 for all points.",
+          "Wavelength": {
+            "translated-name": "Wavelength",
+            "description": "The length of one full wave along the line, in pixels.",
             "params": {}
           },
-          "UVScrollOffset": {
-            "translated-name": "UVScrollOffset",
-            "description": "How far the texture has scrolled along the line, in pixels.",
+          "WaveMagnitude": {
+            "translated-name": "WaveMagnitude",
+            "description": "How far the wave pushes points, in pixels.",
             "params": {}
           },
-          "UVScrollSpeed": {
-            "translated-name": "UVScrollSpeed",
-            "description": "The texture scroll speed, in pixels per second.",
-            "params": {}
-          },
-          "VertexCount": {
-            "translated-name": "VertexCount",
-            "description": "The number of mesh points used to draw the line.",
+          "WavePeriod": {
+            "translated-name": "WavePeriod",
+            "description": "Seconds per wave cycle (0 = still).",
             "params": {}
           }
         }
